@@ -1,0 +1,28 @@
+name: "Default WordPress"
+description: "MariaDB + PHP 8.2 の標準構成"
+
+wordpress:
+  version: "latest"
+  debug: true
+
+php:
+  version: "8.2"
+
+database:
+  type: "mariadb"
+  version: "10.6"
+  name: "wordpress"
+  user: "wordpress"
+  password: "wordpress"
+  rootPassword: "somewordpress"
+
+# デフォルトの除外パターン（デプロイ時）
+exclude:
+  - ".git/"
+  - ".gitignore"
+  - ".gitmodules"
+  - ".env"
+  - "node_modules/"
+  - "wp-config.php"
+  - "wp-content/*.sql.gz"
+  - ".DS_Store"

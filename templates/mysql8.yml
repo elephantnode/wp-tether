@@ -1,0 +1,27 @@
+name: "MySQL 8.0 WordPress"
+description: "MySQL 8.0 + PHP 8.2 構成"
+
+wordpress:
+  version: "latest"
+  debug: true
+
+php:
+  version: "8.2"
+
+database:
+  type: "mysql"
+  version: "8.0"
+  name: "wordpress"
+  user: "wordpress"
+  password: "wordpress"
+  rootPassword: "somewordpress"
+
+exclude:
+  - ".git/"
+  - ".gitignore"
+  - ".gitmodules"
+  - ".env"
+  - "node_modules/"
+  - "wp-config.php"
+  - "wp-content/*.sql.gz"
+  - ".DS_Store"

@@ -1,36 +1,152 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# wp-tether
 
-## Getting Started
+WordPressローカル環境の管理ツール。Dockerを使用して複数のWordPressサイトを簡単に作成・管理できます。
 
-First, run the development server:
+## 機能
+
+- **サイト管理** - 複数のWordPressローカル環境を作成・管理
+- **テンプレート** - よく使う構成をテンプレートとして共有
+- **バージョン選択** - WordPress / PHP / MySQL / MariaDB のバージョンを自由に選択
+- **Docker連携** - docker-compose.yml を自動生成
+
+## 技術スタック
+
+- Next.js 16 (App Router)
+- TypeScript
+- Tailwind CSS
+- shadcn/ui
+- Docker
+
+## セットアップ
 
 ```bash
+# 依存関係のインストール
+npm install
+
+# 開発サーバーの起動
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+http://localhost:3000 にアクセス
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## ディレクトリ構成
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```
+wp-tether/
+├── data/                    # ローカルデータ（Git管理外）
+│   └── sites.json           # サイト情報
+├── templates/               # 環境テンプレート（Git共有）
+│   ├── default.yml          # MariaDB + PHP 8.2
+│   └── mysql8.yml           # MySQL 8.0 + PHP 8.2
+├── src/
+│   ├── app/
+│   │   ├── api/
+│   │   │   ├── docker/tags/ # Dockerバージョン取得API
+│   │   │   ├── sites/       # サイト管理API
+│   │   │   └── templates/   # テンプレート取得API
+│   │   ├── sites/new/       # 新規サイト作成ページ
+│   │   └── page.tsx         # ダッシュボード
+│   ├── components/
+│   │   ├── app-sidebar.tsx  # サイドバー
+│   │   └── site-card.tsx    # サイトカード
+│   ├── hooks/
+│   │   ├── use-docker-versions.ts
+│   │   └── use-templates.ts
+│   ├── lib/
+│   │   ├── docker-compose.ts # docker-compose.yml生成
+│   │   ├── docker-registry.ts # Docker Hub API
+│   │   └── sites.ts          # サイト管理
+│   └── types/
+│       └── index.ts          # 型定義
+└── ...
+```
 
-## Learn More
+## サイト作成
 
-To learn more about Next.js, take a look at the following resources:
+1. サイドバーの「新規サイト作成」をクリック
+2. サイト名、ローカルパス、ポート番号を入力
+3. テンプレートを選択（詳細設定が自動入力）
+4. 必要に応じて詳細設定をカスタマイズ
+5. 「作成」をクリック
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### 生成されるファイル
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```
+~/wp-sites/my-blog/
+├── docker-compose.yml   # Docker構成
+├── .env                 # 環境変数
+└── src/                 # WordPressファイル
+```
 
-## Deploy on Vercel
+### docker-compose.yml の構成
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+| サービス | 説明 |
+|---------|------|
+| mariadb / mysql | データベース |
+| wordpress | WordPress本体 |
+| mailpit | メールテスト用（WebUI: port+1000, SMTP: port+2000） |
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## サイトの起動
+
+```bash
+cd ~/wp-sites/my-blog
+docker compose up -d
+```
+
+http://localhost:8080 でWordPressにアクセス
+
+## テンプレート
+
+`templates/` ディレクトリにYAMLファイルを追加することで、独自のテンプレートを作成できます。
+
+```yaml
+# templates/custom.yml
+name: "カスタム構成"
+description: "説明文"
+
+wordpress:
+  version: "6.5"
+  debug: true
+
+php:
+  version: "8.2"
+
+database:
+  type: "mariadb"
+  version: "10.6"
+  name: "wordpress"
+  user: "wordpress"
+  password: "wordpress"
+  rootPassword: "somewordpress"
+
+exclude:
+  - ".git/"
+  - "node_modules/"
+```
+
+## Mailpit
+
+メールテスト用にMailpitが含まれています。
+
+| 項目 | URL |
+|------|-----|
+| WebUI | http://localhost:{port+1000} |
+| SMTP | localhost:{port+2000} |
+
+WordPressからメールを送信するには、WP Mail SMTPプラグインで以下を設定：
+
+- SMTP Host: `mailpit`
+- SMTP Port: `1025`
+- 暗号化: なし
+- 認証: なし
+
+## 今後の予定
+
+- [ ] Docker起動/停止機能
+- [ ] デプロイ機能（Wordmove代替）
+- [ ] 外部公開（ngrok/Cloudflare Tunnel）
+- [ ] サイト削除機能
+
+## ライセンス
+
+MIT
