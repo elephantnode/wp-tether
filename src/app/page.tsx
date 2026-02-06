@@ -9,7 +9,11 @@ export default async function Dashboard() {
     id: site.id,
     name: site.name,
     status: site.status,
+    hostname: site.config.hostname,
+    path: site.path,
     port: site.config.port,
+    wpVersion: site.config.wordpress.version,
+    phpVersion: site.config.php.version,
     dbType: `${site.config.database.type === "mysql" ? "MySQL" : "MariaDB"} ${site.config.database.version}`,
   }));
 

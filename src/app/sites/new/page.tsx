@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -43,7 +43,8 @@ const formSchema = z.object({
   port: z
     .number()
     .min(1024, "1024以上のポートを指定してください")
-    .max(65535, "65535以下のポートを指定してください"),
+    .max(65535, "65535以下のポートを指定してください")
+    .optional(),
   template: z.string().min(1, "テンプレートを選択してください"),
   wpVersion: z.string(),
   phpVersion: z.string(),
@@ -57,7 +58,7 @@ const defaultValues: FormValues = {
   name: "",
   hostname: "",
   path: "~/wp-sites",
-  port: 8080,
+  port: undefined,
   template: "default",
   wpVersion: "latest",
   phpVersion: "8.2",
@@ -82,17 +83,43 @@ export default function NewSitePage() {
 
   const watchDbType = form.watch("dbType");
   const dbVersions = watchDbType === "mysql" ? versions.mysql : versions.mariadb;
+  const watchDbVersion = form.watch("dbVersion");
 
   const isLoading = isLoadingVersions || isLoadingTemplates;
+
+  // dbTypeが変わったときに、dbVersionが新しいリストに存在しない場合は最初のバージョンを設定
+  useEffect(() => {
+    if (dbVersions.length > 0 && watchDbVersion && !dbVersions.includes(watchDbVersion)) {
+      form.setValue("dbVersion", dbVersions[0], { shouldValidate: false });
+    }
+  }, [watchDbType, dbVersions, watchDbVersion]);
 
   // テンプレート選択時に詳細設定を自動入力
   function handleTemplateChange(templateId: string) {
     const template = getTemplate(templateId);
     if (template) {
-      form.setValue("wpVersion", template.wordpress.version);
-      form.setValue("phpVersion", template.php.version);
-      form.setValue("dbType", template.database.type);
-      form.setValue("dbVersion", template.database.version);
+      const currentValues = form.getValues();
+      const newDbType = template.database.type;
+      const newDbVersions =
+        newDbType === "mysql" ? versions.mysql : versions.mariadb;
+      
+      // dbTypeが変わる場合は、新しいdbTypeのバージョンリストを確認
+      let dbVersion = template.database.version;
+      if (currentValues.dbType !== newDbType) {
+        // dbTypeが変わった場合、テンプレートのdbVersionが新しいリストに存在するか確認
+        if (!newDbVersions.includes(dbVersion) && newDbVersions.length > 0) {
+          dbVersion = newDbVersions[0];
+        }
+      }
+      
+      // 全ての値を一度にリセットして更新
+      form.reset({
+        ...currentValues,
+        wpVersion: template.wordpress.version,
+        phpVersion: template.php.version,
+        dbType: newDbType,
+        dbVersion: dbVersion,
+      });
     }
   }
 
@@ -157,11 +184,13 @@ export default function NewSitePage() {
                         placeholder="my-blog"
                         {...field}
                         onChange={(e) => {
+                          const newName = e.target.value;
+                          const oldName = form.getValues("name");
                           field.onChange(e);
-                          // サイト名からホスト名を自動生成（未入力の場合）
+                          // サイト名からホスト名を自動生成（未入力または自動生成された値の場合）
                           const currentHostname = form.getValues("hostname");
-                          if (!currentHostname || currentHostname === form.getValues("name") + ".test") {
-                            form.setValue("hostname", e.target.value + ".test");
+                          if (!currentHostname || currentHostname === oldName + ".test") {
+                            form.setValue("hostname", newName + ".test");
                           }
                         }}
                       />
@@ -213,16 +242,21 @@ export default function NewSitePage() {
                 name="port"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>ポート番号</FormLabel>
+                    <FormLabel>ポート番号（オプション）</FormLabel>
                     <FormControl>
                       <Input
                         type="number"
+                        placeholder="自動生成"
                         {...field}
-                        onChange={(e) => field.onChange(Number(e.target.value))}
+                        value={field.value ?? ""}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          field.onChange(value === "" ? undefined : Number(value));
+                        }}
                       />
                     </FormControl>
                     <FormDescription>
-                      http://localhost:{field.value} でアクセスします
+                      未指定の場合は自動生成されます（WordPressサイト識別用、実際のアクセスはポート番号不要）
                     </FormDescription>
                     <FormMessage />
                   </FormItem>
@@ -240,7 +274,7 @@ export default function NewSitePage() {
                         field.onChange(value);
                         handleTemplateChange(value);
                       }}
-                      defaultValue={field.value}
+                      value={field.value}
                     >
                       <FormControl>
                         <SelectTrigger>
@@ -256,7 +290,7 @@ export default function NewSitePage() {
                       </SelectContent>
                     </Select>
                     <FormDescription>
-                      {getTemplate(form.watch("template"))?.description}
+                      {getTemplate(field.value)?.description}
                     </FormDescription>
                     <FormMessage />
                   </FormItem>
@@ -380,7 +414,11 @@ export default function NewSitePage() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>DBバージョン</FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value}>
+                      <Select
+                        key={watchDbType}
+                        onValueChange={field.onChange}
+                        value={field.value}
+                      >
                         <FormControl>
                           <SelectTrigger>
                             <SelectValue />

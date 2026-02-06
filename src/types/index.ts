@@ -26,6 +26,13 @@ export interface SiteConfig {
 
   php: {
     version: string; // e.g., "8.2", "8.1", "7.4"
+    /** php.ini 用（未指定時はデフォルト値を使用） */
+    memoryLimit?: string;
+    maxExecutionTime?: number;
+    uploadMaxFilesize?: string;
+    postMaxSize?: string;
+    /** ロケール（例: ja_JP.UTF-8）。コンテナの LANG/LC_ALL にも反映 */
+    locale?: string;
   };
 
   database: {
