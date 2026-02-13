@@ -392,6 +392,16 @@ async function searchReplaceRemote(
 }
 
 /**
+ * リモートバックアップディレクトリのパスを取得
+ * セキュリティのため、Webルート外（ホームディレクトリ）に保存
+ */
+export function getRemoteBackupDir(targetName: string): string {
+  // サイト名をディレクトリ名に使用（安全な文字のみ）
+  const safeName = targetName.replace(/[^a-zA-Z0-9_-]/g, "_");
+  return `~/wp-tether-backups/${safeName}`;
+}
+
+/**
  * リモートDBのバックアップを作成
  */
 async function backupRemoteDb(
@@ -400,10 +410,11 @@ async function backupRemoteDb(
 ): Promise<string> {
   const { wordpressPath } = target;
   const timestamp = new Date().toISOString().replace(/[-:]/g, "").replace("T", "_").slice(0, 15);
-  const backupPath = `${wordpressPath}/wp-content/backups/db_${timestamp}.sql`;
+  const backupDir = getRemoteBackupDir(target.name);
+  const backupPath = `${backupDir}/db_${timestamp}.sql`;
 
-  // バックアップディレクトリ作成
-  await executeRemoteCommand(target, `mkdir -p '${wordpressPath}/wp-content/backups'`);
+  // バックアップディレクトリ作成（ホームディレクトリ配下、Webアクセス不可）
+  await executeRemoteCommand(target, `mkdir -p ${backupDir}`);
 
   let command: string;
 
@@ -544,6 +555,109 @@ export async function executeDbSync(
       output: logs.join("\n"),
     };
 
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logs.push(`\n[エラー] ${errorMessage}`);
+
+    return {
+      success: false,
+      error: errorMessage,
+      output: logs.join("\n"),
+    };
+  }
+}
+
+/**
+ * リモートのバックアップ一覧を取得
+ */
+export async function listRemoteBackups(
+  target: DeployTarget
+): Promise<{ filename: string; createdAt: string; size: number }[]> {
+  const backupDir = getRemoteBackupDir(target.name);
+
+  try {
+    // ls -la でファイル一覧取得（タイムスタンプとサイズ付き）
+    const { stdout } = await executeRemoteCommand(
+      target,
+      `ls -la ${backupDir}/*.sql 2>/dev/null || echo ""`
+    );
+
+    if (!stdout.trim()) {
+      return [];
+    }
+
+    const backups: { filename: string; createdAt: string; size: number }[] = [];
+    const lines = stdout.trim().split("\n");
+
+    for (const line of lines) {
+      // -rw-r--r-- 1 user group 12345 Jan 15 10:30 filename.sql
+      const match = line.match(/\S+\s+\d+\s+\S+\s+\S+\s+(\d+)\s+(\w+\s+\d+\s+[\d:]+)\s+(.+\.sql)$/);
+      if (match) {
+        const [, size, dateStr, filepath] = match;
+        const filename = filepath.split("/").pop() || filepath;
+        backups.push({
+          filename,
+          createdAt: dateStr,
+          size: parseInt(size, 10),
+        });
+      }
+    }
+
+    // 新しい順にソート（ファイル名にタイムスタンプが含まれているので逆順ソート）
+    backups.sort((a, b) => b.filename.localeCompare(a.filename));
+
+    return backups;
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * リモートのバックアップを復元
+ */
+export async function restoreRemoteBackup(
+  target: DeployTarget,
+  filename: string
+): Promise<{ success: boolean; output: string; error?: string }> {
+  const backupDir = getRemoteBackupDir(target.name);
+  const backupPath = `${backupDir}/${filename}`;
+  const { wordpressPath } = target;
+  const logs: string[] = [];
+
+  try {
+    // 能力を検出
+    logs.push("リモートサーバーの能力を検出中...");
+    const capabilities = await detectRemoteCapabilities(target);
+
+    // バックアップファイルの存在確認
+    logs.push(`\nバックアップファイルを確認: ${filename}`);
+    const { stdout: checkResult } = await executeRemoteCommand(
+      target,
+      `test -f '${backupPath}' && echo "exists" || echo "not found"`
+    );
+
+    if (checkResult.trim() !== "exists") {
+      throw new Error("バックアップファイルが見つかりません");
+    }
+
+    // 復元実行
+    logs.push("\nデータベースを復元中...");
+
+    let command: string;
+    if (capabilities.hasWpCli) {
+      const wpPath = capabilities.wpCliPath || "wp";
+      command = `cd '${wordpressPath}' && ${wpPath} db import '${backupPath}'`;
+    } else {
+      command = `mysql -h ${target.database.host} -u ${target.database.user} -p'${target.database.password}' ${target.database.name} < '${backupPath}'`;
+    }
+
+    await executeRemoteCommand(target, command, 300000);
+    logs.push("  復元完了");
+
+    return {
+      success: true,
+      output: logs.join("\n"),
+    };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     logs.push(`\n[エラー] ${errorMessage}`);

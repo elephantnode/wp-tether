@@ -31,6 +31,7 @@ import {
 } from "lucide-react";
 import { SyncDialog } from "./sync-dialog";
 import { DbSyncDialog } from "./db-sync-dialog";
+import { RemoteDbRestoreDialog } from "./remote-db-restore-dialog";
 
 interface DeployTargetCardProps {
   target: DeployTarget;
@@ -174,6 +175,11 @@ export function DeployTargetCard({ target, sitePath, siteStatus }: DeployTargetC
             <Database className="w-4 h-4 mr-1" />
             DB
           </Button>
+
+          <RemoteDbRestoreDialog
+            targetId={target.id}
+            targetName={target.name}
+          />
 
           <Button
             size="sm"
