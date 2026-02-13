@@ -42,6 +42,7 @@ import {
   User,
   Key,
   Settings,
+  Package,
 } from "lucide-react";
 
 interface SiteCardProps {
@@ -75,6 +76,8 @@ export function SiteCard({ site }: SiteCardProps) {
   const [showCommands, setShowCommands] = useState(false);
   const [copiedCommand, setCopiedCommand] = useState<string | null>(null);
   const [copiedPath, setCopiedPath] = useState(false);
+  const [isInstallingPlugins, setIsInstallingPlugins] = useState(false);
+  const [pluginResult, setPluginResult] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   const isRunning = site.status === "running";
 
@@ -227,6 +230,38 @@ export function SiteCard({ site }: SiteCardProps) {
     } catch (err) {
       setError(err instanceof Error ? err.message : "エラーが発生しました");
       setIsDeleting(false);
+    }
+  }
+
+  async function handleInstallPlugins() {
+    setIsInstallingPlugins(true);
+    setPluginResult(null);
+    setError(null);
+
+    try {
+      const res = await fetch("/api/plugins/install", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ siteId: site.id }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || "インストールに失敗しました");
+      }
+
+      setPluginResult({
+        type: "success",
+        text: `${data.plugins.length}個のプラグインをインストールしました`,
+      });
+    } catch (err) {
+      setPluginResult({
+        type: "error",
+        text: err instanceof Error ? err.message : "エラーが発生しました",
+      });
+    } finally {
+      setIsInstallingPlugins(false);
     }
   }
 
@@ -416,6 +451,15 @@ export function SiteCard({ site }: SiteCardProps) {
         </div>
 
         {error && <p className="text-destructive text-xs mt-2">{error}</p>}
+        {pluginResult && (
+          <p
+            className={`text-xs mt-2 ${
+              pluginResult.type === "success" ? "text-green-600" : "text-destructive"
+            }`}
+          >
+            {pluginResult.text}
+          </p>
+        )}
       </CardContent>
 
       <CardFooter className="gap-2 flex-wrap">
@@ -447,6 +491,20 @@ export function SiteCard({ site }: SiteCardProps) {
                 <Mail className="w-4 h-4 mr-1" />
                 Mailpit
               </a>
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleInstallPlugins}
+              disabled={isInstallingPlugins}
+              title="プリセットのプラグインをインストール"
+            >
+              {isInstallingPlugins ? (
+                <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+              ) : (
+                <Package className="w-4 h-4 mr-1" />
+              )}
+              {isInstallingPlugins ? "インストール中..." : "プラグイン"}
             </Button>
             <Button
               size="sm"
