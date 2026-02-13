@@ -38,3 +38,11 @@ npm run lint     # ESLint実行
 ## データ
 - `data/sites.json` - サイト情報
 - `data/deploy-targets.json` - デプロイターゲット情報
+
+## 実装済み機能
+- サイト管理（作成・起動・停止・削除）
+- テンプレート選択（MariaDB / MySQL 8.0）
+- カスタムホスト名 + SSL（Caddy + mkcert）
+- WP-CLI自動インストール
+- rsyncファイル同期（Push/Pull、除外パターンUI）
+- DB同期（Push/Pull、URL置換、ユーザー除外オプション）
