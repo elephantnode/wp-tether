@@ -91,6 +91,44 @@ export interface DeployTarget {
   };
 
   exclude: string[]; // rsync除外パターン
+
+  /** リモートのWP-CLI設定（検出結果をキャッシュ） */
+  wpCli?: {
+    available: boolean;
+    path?: string; // 例: /usr/local/bin/wp
+  };
+}
+
+// ===========================================
+// DB同期
+// ===========================================
+
+/** DB同期オプション */
+export interface DbSyncOptions {
+  direction: "push" | "pull";
+  includeUsers: boolean; // wp_users, wp_usermeta を含むか
+  createBackup: boolean; // インポート前にバックアップを取るか
+  dryRun?: boolean; // プレビューのみ（実行しない）
+}
+
+/** DB同期結果 */
+export interface DbSyncResult {
+  success: boolean;
+  backupPath?: string; // 作成したバックアップのパス
+  tablesAffected?: number;
+  rowsAffected?: number;
+  searchReplaceLog?: string;
+  output?: string;
+  error?: string;
+}
+
+/** リモートサーバーのDB操作能力 */
+export interface RemoteDbCapabilities {
+  hasWpCli: boolean;
+  wpCliPath?: string;
+  hasMysqldump: boolean;
+  hasMariadbDump: boolean;
+  dbType: "mysql" | "mariadb" | "unknown";
 }
 
 // ===========================================

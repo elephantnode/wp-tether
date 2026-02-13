@@ -23,7 +23,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Textarea } from "@/components/ui/textarea";
 import { Loader2 } from "lucide-react";
 
 const formSchema = z.object({
@@ -45,6 +46,8 @@ const formSchema = z.object({
   dbName: z.string().min(1, "DB名を入力してください"),
   dbUser: z.string().min(1, "DBユーザーを入力してください"),
   dbPassword: z.string().optional(),
+  // 除外パターン
+  exclude: z.string().optional(),
 });
 
 type FormValues = z.infer<typeof formSchema>;
@@ -63,6 +66,7 @@ const defaultValues: FormValues = {
   dbName: "",
   dbUser: "",
   dbPassword: "",
+  exclude: "",
 };
 
 interface Site {
@@ -129,7 +133,9 @@ function NewDeployTargetForm() {
           user: data.dbUser,
           password: data.dbPassword || "",
         },
-        exclude: [],
+        exclude: data.exclude
+          ? data.exclude.split("\n").map((s) => s.trim()).filter(Boolean)
+          : [],
       };
 
       const res = await fetch("/api/deploy-targets", {
@@ -354,7 +360,7 @@ function NewDeployTargetForm() {
           {/* データベース設定 */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg">データベース設定（将来用）</CardTitle>
+              <CardTitle className="text-lg">データベース設定</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
@@ -416,6 +422,37 @@ function NewDeployTargetForm() {
                   )}
                 />
               </div>
+            </CardContent>
+          </Card>
+
+          {/* 除外パターン */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">除外パターン</CardTitle>
+              <CardDescription>
+                同期から除外するファイル/フォルダのパターン（1行に1つ）
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <FormField
+                control={form.control}
+                name="exclude"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormControl>
+                      <Textarea
+                        placeholder={`vendor/\nsrc/\n*.map\n*.scss`}
+                        className="font-mono text-sm min-h-[120px]"
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      デフォルトで .git/, node_modules/, .DS_Store, *.log, .env は除外されます
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
             </CardContent>
           </Card>
 

@@ -27,8 +27,10 @@ import {
   XCircle,
   Wifi,
   Pencil,
+  Database,
 } from "lucide-react";
 import { SyncDialog } from "./sync-dialog";
+import { DbSyncDialog } from "./db-sync-dialog";
 
 interface DeployTargetCardProps {
   target: DeployTarget;
@@ -42,6 +44,7 @@ export function DeployTargetCard({ target, sitePath, siteStatus }: DeployTargetC
   const [isTesting, setIsTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; error?: string } | null>(null);
   const [showSyncDialog, setShowSyncDialog] = useState(false);
+  const [showDbSyncDialog, setShowDbSyncDialog] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const isRunning = siteStatus === "running";
@@ -160,7 +163,16 @@ export function DeployTargetCard({ target, sitePath, siteStatus }: DeployTargetC
             onClick={() => setShowSyncDialog(true)}
           >
             <FolderSync className="w-4 h-4 mr-1" />
-            同期
+            ファイル
+          </Button>
+
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => setShowDbSyncDialog(true)}
+          >
+            <Database className="w-4 h-4 mr-1" />
+            DB
           </Button>
 
           <Button
@@ -202,6 +214,12 @@ export function DeployTargetCard({ target, sitePath, siteStatus }: DeployTargetC
       <SyncDialog
         open={showSyncDialog}
         onOpenChange={setShowSyncDialog}
+        target={target}
+      />
+
+      <DbSyncDialog
+        open={showDbSyncDialog}
+        onOpenChange={setShowDbSyncDialog}
         target={target}
       />
     </>
