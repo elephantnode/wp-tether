@@ -394,11 +394,15 @@ async function searchReplaceRemote(
 /**
  * リモートバックアップディレクトリの相対パスを取得
  * セキュリティのため、Webルート外（ホームディレクトリ）に保存
+ * 構造: ~/wp-tether-backups/{site-name}_{site-id}/{target-name}/
+ * サイト名が日本語の場合も siteId で一意性を保証
  */
-export function getRemoteBackupDirRelative(targetName: string): string {
-  // サイト名をディレクトリ名に使用（安全な文字のみ）
-  const safeName = targetName.replace(/[^a-zA-Z0-9_-]/g, "_");
-  return `wp-tether-backups/${safeName}`;
+export function getRemoteBackupDirRelative(siteName: string, siteId: string, targetName: string): string {
+  // サイト名・ターゲット名をディレクトリ名に使用（安全な文字のみ）
+  const safeSiteName = siteName.replace(/[^a-zA-Z0-9_-]/g, "_") || "site";
+  const safeTargetName = targetName.replace(/[^a-zA-Z0-9_-]/g, "_");
+  // siteId を付与して一意性を保証（日本語サイト名対策）
+  return `wp-tether-backups/${safeSiteName}_${siteId}/${safeTargetName}`;
 }
 
 /**
@@ -412,9 +416,9 @@ async function getRemoteHomeDir(target: DeployTarget): Promise<string> {
 /**
  * リモートバックアップディレクトリのフルパスを取得
  */
-export async function getRemoteBackupDir(target: DeployTarget): Promise<string> {
+export async function getRemoteBackupDir(target: DeployTarget, siteName: string, siteId: string): Promise<string> {
   const homeDir = await getRemoteHomeDir(target);
-  const relativePath = getRemoteBackupDirRelative(target.name);
+  const relativePath = getRemoteBackupDirRelative(siteName, siteId, target.name);
   return `${homeDir}/${relativePath}`;
 }
 
@@ -423,11 +427,13 @@ export async function getRemoteBackupDir(target: DeployTarget): Promise<string> 
  */
 async function backupRemoteDb(
   target: DeployTarget,
+  siteName: string,
+  siteId: string,
   capabilities: RemoteDbCapabilities
 ): Promise<string> {
   const { wordpressPath } = target;
   const timestamp = new Date().toISOString().replace(/[-:]/g, "").replace("T", "_").slice(0, 15);
-  const backupDir = await getRemoteBackupDir(target);
+  const backupDir = await getRemoteBackupDir(target, siteName, siteId);
   const backupPath = `${backupDir}/db_${timestamp}.sql`;
 
   // バックアップディレクトリ作成（ホームディレクトリ配下、Webアクセス不可）
@@ -530,7 +536,7 @@ export async function executeDbSync(
       // 1. リモートのバックアップ
       if (createBackup) {
         logs.push("\nリモートDBをバックアップ中...");
-        const remoteBackupPath = await backupRemoteDb(target, capabilities);
+        const remoteBackupPath = await backupRemoteDb(target, site.name, site.id, capabilities);
         logs.push(`  バックアップ完了: ${remoteBackupPath}`);
       }
 
@@ -588,9 +594,11 @@ export async function executeDbSync(
  * リモートのバックアップ一覧を取得
  */
 export async function listRemoteBackups(
-  target: DeployTarget
+  target: DeployTarget,
+  siteName: string,
+  siteId: string
 ): Promise<{ filename: string; createdAt: string; size: number }[]> {
-  const backupDir = await getRemoteBackupDir(target);
+  const backupDir = await getRemoteBackupDir(target, siteName, siteId);
 
   try {
     // find + stat で確実にファイル情報を取得（サーバー間の差異を吸収）
@@ -647,9 +655,11 @@ export async function listRemoteBackups(
  */
 export async function restoreRemoteBackup(
   target: DeployTarget,
+  siteName: string,
+  siteId: string,
   filename: string
 ): Promise<{ success: boolean; output: string; error?: string }> {
-  const backupDir = await getRemoteBackupDir(target);
+  const backupDir = await getRemoteBackupDir(target, siteName, siteId);
   const backupPath = `${backupDir}/${filename}`;
   const { wordpressPath } = target;
   const logs: string[] = [];

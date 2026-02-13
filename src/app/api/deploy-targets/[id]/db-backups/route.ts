@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getDeployTarget } from "@/lib/deploy-targets";
+import { getSite } from "@/lib/sites";
 import { listRemoteBackups, getRemoteBackupDir } from "@/lib/db-sync";
 
 export async function GET(
@@ -17,8 +18,16 @@ export async function GET(
       );
     }
 
-    const backups = await listRemoteBackups(target);
-    const backupDir = await getRemoteBackupDir(target);
+    const site = await getSite(target.siteId);
+    if (!site) {
+      return NextResponse.json(
+        { error: "関連するサイトが見つかりません" },
+        { status: 404 }
+      );
+    }
+
+    const backups = await listRemoteBackups(target, site.name, site.id);
+    const backupDir = await getRemoteBackupDir(target, site.name, site.id);
 
     return NextResponse.json({ backups, backupDir });
   } catch (error) {

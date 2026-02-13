@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getDeployTarget } from "@/lib/deploy-targets";
+import { getSite } from "@/lib/sites";
 import { restoreRemoteBackup } from "@/lib/db-sync";
 
 export async function POST(
@@ -26,7 +27,15 @@ export async function POST(
       );
     }
 
-    const result = await restoreRemoteBackup(target, filename);
+    const site = await getSite(target.siteId);
+    if (!site) {
+      return NextResponse.json(
+        { error: "関連するサイトが見つかりません" },
+        { status: 404 }
+      );
+    }
+
+    const result = await restoreRemoteBackup(target, site.name, site.id, filename);
 
     if (!result.success) {
       return NextResponse.json(
