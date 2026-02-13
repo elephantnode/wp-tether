@@ -1,12 +1,12 @@
 name: "Default WordPress"
-description: "MariaDB + PHP 8.2 の標準構成"
+description: "MariaDB + PHP 8.3 の標準構成"
 
 wordpress:
   version: "latest"
   debug: true
 
 php:
-  version: "8.2"
+  version: "8.3"
 
 database:
   type: "mariadb"

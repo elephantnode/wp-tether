@@ -33,10 +33,10 @@ const formSchema = z.object({
     .string()
     .min(1, "サイト名を入力してください")
     .regex(/^[a-z0-9-]+$/, "小文字英数字とハイフンのみ使用できます"),
+  hostnameMode: z.enum(["localhost", "custom"]),
   hostname: z
     .string()
-    .min(1, "ホスト名を入力してください")
-    .regex(/^[a-z0-9-]+(\.[a-z0-9-]+)*$/, "有効なホスト名を入力してください"),
+    .optional(),
   path: z
     .string()
     .min(1, "パスを入力してください"),
@@ -50,26 +50,47 @@ const formSchema = z.object({
   phpVersion: z.string(),
   dbType: z.enum(["mariadb", "mysql"]),
   dbVersion: z.string(),
+  // WordPress初期設定
+  wpAdminUser: z.string().min(1, "管理者ユーザー名を入力してください"),
+  wpAdminPassword: z.string().min(8, "8文字以上のパスワードを入力してください"),
+  wpAdminEmail: z.string().email("有効なメールアドレスを入力してください"),
+  wpLocale: z.string(),
 });
 
 type FormValues = z.infer<typeof formSchema>;
 
 const defaultValues: FormValues = {
   name: "",
+  hostnameMode: "custom",
   hostname: "",
   path: "~/wp-sites",
   port: undefined,
   template: "default",
   wpVersion: "latest",
-  phpVersion: "8.2",
+  phpVersion: "8.3",  // テンプレートの default.yml に合わせる
   dbType: "mariadb",
   dbVersion: "10.6",
+  // WordPress初期設定
+  wpAdminUser: "admin",
+  wpAdminPassword: "",
+  wpAdminEmail: "admin@example.com",
+  wpLocale: "ja",
 };
 
 const dbTypes = [
   { value: "mariadb", label: "MariaDB" },
   { value: "mysql", label: "MySQL" },
 ];
+
+/**
+ * ランダムなパスワードを生成（英数字 + 記号）
+ */
+function generateRandomPassword(length = 16): string {
+  const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*";
+  const array = new Uint8Array(length);
+  crypto.getRandomValues(array);
+  return Array.from(array, (byte) => charset[byte % charset.length]).join("");
+}
 
 export default function NewSitePage() {
   const router = useRouter();
@@ -93,6 +114,15 @@ export default function NewSitePage() {
       form.setValue("dbVersion", dbVersions[0], { shouldValidate: false });
     }
   }, [watchDbType, dbVersions, watchDbVersion]);
+
+  // 初回マウント時にランダムパスワードを生成
+  useEffect(() => {
+    const currentPassword = form.getValues("wpAdminPassword");
+    if (!currentPassword) {
+      form.setValue("wpAdminPassword", generateRandomPassword());
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // テンプレート選択時に詳細設定を自動入力
   function handleTemplateChange(templateId: string) {
@@ -187,10 +217,12 @@ export default function NewSitePage() {
                           const newName = e.target.value;
                           const oldName = form.getValues("name");
                           field.onChange(e);
-                          // サイト名からホスト名を自動生成（未入力または自動生成された値の場合）
-                          const currentHostname = form.getValues("hostname");
-                          if (!currentHostname || currentHostname === oldName + ".test") {
-                            form.setValue("hostname", newName + ".test");
+                          // カスタムホスト名モードの場合のみ、サイト名からホスト名を自動生成
+                          if (form.getValues("hostnameMode") === "custom") {
+                            const currentHostname = form.getValues("hostname");
+                            if (!currentHostname || currentHostname === oldName + ".test") {
+                              form.setValue("hostname", newName + ".test");
+                            }
                           }
                         }}
                       />
@@ -205,20 +237,49 @@ export default function NewSitePage() {
 
               <FormField
                 control={form.control}
-                name="hostname"
+                name="hostnameMode"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>ホスト名</FormLabel>
-                    <FormControl>
-                      <Input placeholder="my-blog.test" {...field} />
-                    </FormControl>
+                    <FormLabel>アクセス方法</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="localhost">localhost:port（簡単・設定不要）</SelectItem>
+                        <SelectItem value="custom">カスタムホスト名（要 /etc/hosts）</SelectItem>
+                      </SelectContent>
+                    </Select>
                     <FormDescription>
-                      オプション: /etc/hostsに追加すればSSLでアクセス可能
+                      {field.value === "localhost"
+                        ? "http://localhost:8080 のようなURLでアクセスします"
+                        : "mysite.test のようなカスタムドメインでアクセスします（HTTPSも利用可）"}
                     </FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}
               />
+
+              {form.watch("hostnameMode") === "custom" && (
+                <FormField
+                  control={form.control}
+                  name="hostname"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>ホスト名</FormLabel>
+                      <FormControl>
+                        <Input placeholder="my-blog.test" {...field} />
+                      </FormControl>
+                      <FormDescription>
+                        /etc/hosts に追加するホスト名（例: my-blog.test）
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
 
               <FormField
                 control={form.control}
@@ -430,6 +491,94 @@ export default function NewSitePage() {
                               {v === "latest" ? "Latest" : v}
                             </SelectItem>
                           ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* WordPress初期設定 */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">WordPress初期設定</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                サイト作成時にWordPressを自動セットアップします
+              </p>
+
+              <div className="grid grid-cols-2 gap-4">
+                <FormField
+                  control={form.control}
+                  name="wpAdminUser"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>管理者ユーザー名</FormLabel>
+                      <FormControl>
+                        <Input placeholder="admin" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="wpAdminPassword"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>管理者パスワード</FormLabel>
+                      <FormControl>
+                        <Input type="text" placeholder="8文字以上" {...field} className="font-mono" />
+                      </FormControl>
+                      <FormDescription>自動生成済み。必要に応じて変更可</FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <FormField
+                  control={form.control}
+                  name="wpAdminEmail"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>管理者メールアドレス</FormLabel>
+                      <FormControl>
+                        <Input type="email" placeholder="admin@example.com" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="wpLocale"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>言語</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="ja">日本語</SelectItem>
+                          <SelectItem value="en_US">English (US)</SelectItem>
+                          <SelectItem value="en_GB">English (UK)</SelectItem>
+                          <SelectItem value="zh_CN">中文 (简体)</SelectItem>
+                          <SelectItem value="zh_TW">中文 (繁體)</SelectItem>
+                          <SelectItem value="ko_KR">한국어</SelectItem>
+                          <SelectItem value="de_DE">Deutsch</SelectItem>
+                          <SelectItem value="fr_FR">Français</SelectItem>
+                          <SelectItem value="es_ES">Español</SelectItem>
                         </SelectContent>
                       </Select>
                       <FormMessage />

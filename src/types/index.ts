@@ -14,6 +14,8 @@ export interface Site {
 export interface SiteConfig {
   projectName: string;
   hostname: string;
+  /** ホスト名モード: custom = カスタムホスト名（要/etc/hosts）, localhost = localhost:port */
+  hostnameMode: "custom" | "localhost";
   suffix: string;
   timezone: string;
   certName?: string;
@@ -22,6 +24,14 @@ export interface SiteConfig {
   wordpress: {
     version: string; // e.g., "latest", "6.4", "6.3.2"
     debug: boolean;
+    /** 初期インストール設定（オプション） */
+    admin?: {
+      user: string;
+      password: string;
+      email: string;
+    };
+    /** WordPress言語（例: ja, en_US） */
+    locale?: string;
   };
 
   php: {

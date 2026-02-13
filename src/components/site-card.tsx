@@ -29,10 +29,19 @@ import {
   Square,
   Trash2,
   Folder,
+  FolderOpen,
   Globe,
   Mail,
   Server,
   Loader2,
+  Terminal,
+  ChevronDown,
+  ChevronUp,
+  Copy,
+  Check,
+  User,
+  Key,
+  Settings,
 } from "lucide-react";
 
 interface SiteCardProps {
@@ -41,11 +50,18 @@ interface SiteCardProps {
     name: string;
     status: "running" | "stopped" | "creating" | "error";
     hostname: string;
+    hostnameMode?: "localhost" | "custom";
     path: string;
     port: number;
     wpVersion: string;
     phpVersion: string;
     dbType: string;
+    /** WordPress管理者情報（オプション） */
+    admin?: {
+      user: string;
+      password: string;
+      email: string;
+    };
   };
 }
 
@@ -56,8 +72,96 @@ export function SiteCard({ site }: SiteCardProps) {
   const [deleteFiles, setDeleteFiles] = useState(false);
   const [deleteVolumes, setDeleteVolumes] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [showCommands, setShowCommands] = useState(false);
+  const [copiedCommand, setCopiedCommand] = useState<string | null>(null);
+  const [copiedPath, setCopiedPath] = useState(false);
 
   const isRunning = site.status === "running";
+
+  // コマンドリスト
+  const commands = [
+    {
+      category: "WP-CLI",
+      items: [
+        { label: "プラグイン一覧", cmd: "docker compose run --rm wpcli plugin list" },
+        { label: "プラグインインストール", cmd: "docker compose run --rm wpcli plugin install <plugin-name> --activate" },
+        { label: "テーマ一覧", cmd: "docker compose run --rm wpcli theme list" },
+        { label: "ユーザー一覧", cmd: "docker compose run --rm wpcli user list" },
+        { label: "DBエクスポート", cmd: "docker compose run --rm wpcli db export - > backup.sql" },
+        { label: "DBインポート", cmd: "docker compose run --rm wpcli db import - < backup.sql" },
+        { label: "キャッシュクリア", cmd: "docker compose run --rm wpcli cache flush" },
+        { label: "検索置換", cmd: "docker compose run --rm wpcli search-replace 'old' 'new'" },
+      ],
+    },
+    {
+      category: "Composer",
+      items: [
+        { label: "パッケージインストール", cmd: "docker compose run --rm composer require <vendor/package>" },
+        { label: "依存関係インストール", cmd: "docker compose run --rm composer install" },
+        { label: "依存関係更新", cmd: "docker compose run --rm composer update" },
+      ],
+    },
+    {
+      category: "Docker",
+      items: [
+        { label: "ログ確認", cmd: "docker compose logs -f" },
+        { label: "WPログ確認", cmd: "docker compose logs -f wordpress" },
+        { label: "コンテナ状態", cmd: "docker compose ps" },
+        { label: "再起動", cmd: "docker compose restart" },
+      ],
+    },
+  ];
+
+  async function copyToClipboard(cmd: string) {
+    try {
+      await navigator.clipboard.writeText(cmd);
+      setCopiedCommand(cmd);
+      setTimeout(() => setCopiedCommand(null), 2000);
+    } catch {
+      // フォールバック
+      const textarea = document.createElement("textarea");
+      textarea.value = cmd;
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand("copy");
+      document.body.removeChild(textarea);
+      setCopiedCommand(cmd);
+      setTimeout(() => setCopiedCommand(null), 2000);
+    }
+  }
+
+  async function copyPath() {
+    try {
+      await navigator.clipboard.writeText(site.path);
+      setCopiedPath(true);
+      setTimeout(() => setCopiedPath(false), 2000);
+    } catch {
+      const textarea = document.createElement("textarea");
+      textarea.value = site.path;
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand("copy");
+      document.body.removeChild(textarea);
+      setCopiedPath(true);
+      setTimeout(() => setCopiedPath(false), 2000);
+    }
+  }
+
+  async function openFolder() {
+    try {
+      const res = await fetch("/api/open-folder", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: site.path }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        setError(data.error || "フォルダを開けませんでした");
+      }
+    } catch {
+      setError("フォルダを開けませんでした");
+    }
+  }
 
   async function handleStart() {
     setIsLoading(true);
@@ -139,47 +243,89 @@ export function SiteCard({ site }: SiteCardProps) {
           </Badge>
         </div>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
-          <a
-            href={`http://${site.hostname}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="hover:underline hover:text-foreground"
-          >
-            http://{site.hostname}
-          </a>
-          <a
-            href={`https://${site.hostname}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="hover:underline hover:text-foreground"
-          >
-            https://{site.hostname}
-          </a>
+          {site.hostnameMode === "localhost" ? (
+            <a
+              href={`http://localhost:${site.port}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:underline hover:text-foreground"
+            >
+              http://localhost:{site.port}
+            </a>
+          ) : (
+            <>
+              <a
+                href={`http://${site.hostname}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hover:underline hover:text-foreground"
+              >
+                http://{site.hostname}
+              </a>
+              <a
+                href={`https://${site.hostname}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hover:underline hover:text-foreground"
+              >
+                https://{site.hostname}
+              </a>
+            </>
+          )}
         </div>
       </CardHeader>
 
       <CardContent className="text-sm space-y-2">
         <div className="flex items-center gap-2 text-muted-foreground">
           <Globe className="w-4 h-4 shrink-0" />
-          <a
-            href={`http://${site.hostname}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="truncate hover:underline hover:text-foreground"
-            title={`http://${site.hostname}`}
-          >
-            {site.hostname}
-          </a>
+          {site.hostnameMode === "localhost" ? (
+            <a
+              href={`http://localhost:${site.port}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="truncate hover:underline hover:text-foreground"
+              title={`http://localhost:${site.port}`}
+            >
+              localhost:{site.port}
+            </a>
+          ) : (
+            <a
+              href={`http://${site.hostname}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="truncate hover:underline hover:text-foreground"
+              title={`http://${site.hostname}`}
+            >
+              {site.hostname}
+            </a>
+          )}
         </div>
-        <div className="flex items-center gap-2 text-muted-foreground">
+        <div className="group flex items-center gap-2 text-muted-foreground">
           <Folder className="w-4 h-4 shrink-0" />
-          <a
-            href={`file://${site.path}`}
-            className="truncate hover:underline hover:text-foreground"
+          <span
+            className="truncate flex-1"
             title={site.path}
           >
             {site.path}
-          </a>
+          </span>
+          <button
+            onClick={copyPath}
+            className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-muted rounded"
+            title="パスをコピー"
+          >
+            {copiedPath ? (
+              <Check className="w-3 h-3 text-green-600" />
+            ) : (
+              <Copy className="w-3 h-3" />
+            )}
+          </button>
+          <button
+            onClick={openFolder}
+            className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-muted rounded"
+            title="フォルダを開く"
+          >
+            <FolderOpen className="w-3 h-3" />
+          </button>
         </div>
         <div className="flex items-center gap-2 text-muted-foreground">
           <Server className="w-4 h-4 shrink-0" />
@@ -187,6 +333,18 @@ export function SiteCard({ site }: SiteCardProps) {
             WP {site.wpVersion} / PHP {site.phpVersion} / {site.dbType}
           </span>
         </div>
+        {site.admin && (
+          <div className="flex items-center gap-2 text-muted-foreground">
+            <User className="w-4 h-4 shrink-0" />
+            <span className="font-mono text-xs">
+              {site.admin.user}
+            </span>
+            <Key className="w-4 h-4 shrink-0 ml-2" />
+            <code className="font-mono text-xs bg-muted px-1 rounded select-all">
+              {site.admin.password}
+            </code>
+          </div>
+        )}
         <div className="flex items-center gap-2 text-muted-foreground">
           <Mail className="w-4 h-4 shrink-0" />
           <a
@@ -200,22 +358,88 @@ export function SiteCard({ site }: SiteCardProps) {
           </a>
         </div>
 
+        {/* コマンドリスト */}
+        <div className="pt-2 border-t mt-3">
+          <button
+            onClick={() => setShowCommands(!showCommands)}
+            className="flex items-center gap-2 text-muted-foreground hover:text-foreground w-full text-left"
+          >
+            <Terminal className="w-4 h-4 shrink-0" />
+            <span className="flex-1">コマンドリスト</span>
+            {showCommands ? (
+              <ChevronUp className="w-4 h-4" />
+            ) : (
+              <ChevronDown className="w-4 h-4" />
+            )}
+          </button>
+
+          {showCommands && (
+            <div className="mt-3 space-y-3">
+              <p className="text-xs text-muted-foreground">
+                サイトディレクトリで実行: <code className="bg-muted px-1 rounded">{site.path}</code>
+              </p>
+              {commands.map((group) => (
+                <div key={group.category}>
+                  <h4 className="text-xs font-semibold text-muted-foreground mb-1">
+                    {group.category}
+                  </h4>
+                  <div className="space-y-1">
+                    {group.items.map((item) => (
+                      <div
+                        key={item.label}
+                        className="group flex items-center gap-2 text-xs"
+                      >
+                        <span className="text-muted-foreground w-28 shrink-0">
+                          {item.label}
+                        </span>
+                        <code className="flex-1 bg-muted px-2 py-1 rounded text-[11px] font-mono truncate">
+                          {item.cmd}
+                        </code>
+                        <button
+                          onClick={() => copyToClipboard(item.cmd)}
+                          className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-muted rounded"
+                          title="コピー"
+                        >
+                          {copiedCommand === item.cmd ? (
+                            <Check className="w-3 h-3 text-green-600" />
+                          ) : (
+                            <Copy className="w-3 h-3" />
+                          )}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
         {error && <p className="text-destructive text-xs mt-2">{error}</p>}
       </CardContent>
 
-      <CardFooter className="gap-2">
+      <CardFooter className="gap-2 flex-wrap">
         {isRunning ? (
           <>
             <Button size="sm" variant="outline" asChild>
-              <a href={`http://${site.hostname}`} target="_blank" rel="noopener noreferrer">
+              <a
+                href={site.hostnameMode === "localhost" ? `http://localhost:${site.port}` : `https://${site.hostname}`}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
                 <ExternalLink className="w-4 h-4 mr-1" />
-                HTTP
+                サイト
               </a>
             </Button>
             <Button size="sm" variant="outline" asChild>
-              <a href={`https://${site.hostname}`} target="_blank" rel="noopener noreferrer">
-                <ExternalLink className="w-4 h-4 mr-1" />
-                HTTPS
+              <a
+                href={site.hostnameMode === "localhost" ? `http://localhost:${site.port}/wp-admin/` : `http://${site.hostname}/wp-admin/`}
+                target="_blank"
+                rel="noopener noreferrer"
+                title="WordPress管理画面"
+              >
+                <Settings className="w-4 h-4 mr-1" />
+                管理画面
               </a>
             </Button>
             <Button size="sm" variant="outline" asChild>

@@ -10,11 +10,13 @@ export default async function Dashboard() {
     name: site.name,
     status: site.status,
     hostname: site.config.hostname,
+    hostnameMode: site.config.hostnameMode,
     path: site.path,
     port: site.config.port,
     wpVersion: site.config.wordpress.version,
     phpVersion: site.config.php.version,
     dbType: `${site.config.database.type === "mysql" ? "MySQL" : "MariaDB"} ${site.config.database.version}`,
+    admin: site.config.wordpress.admin,
   }));
 
   return (

@@ -45,11 +45,19 @@ export function generateDockerCompose(options: GenerateOptions): string {
         ? config.wordpress.version
         : `${config.wordpress.version}-php${config.php.version}-apache`;
 
-  // WordPress設定用のPHPコード（ポート番号を削除してURLを設定）
-  // リバースプロキシ経由のアクセスを検出して、ポート番号なしのURLを設定
+  // localhostモードかカスタムホスト名モードか
+  const isLocalhostMode = config.hostnameMode === "localhost";
+
+  // WordPress設定用のPHPコード
   // Docker Composeの環境変数展開を避けるため、$を$$にエスケープ（Composeは$$→$に変換）
-  // ただし else はPHPキーワードなので$は不要
-  const wpConfigExtra = `if(isset($$_SERVER['HTTP_X_FORWARDED_PROTO'])){$$_SERVER['HTTPS']=($$_SERVER['HTTP_X_FORWARDED_PROTO']==='https')?'on':'off';$$scheme=$$_SERVER['HTTP_X_FORWARDED_PROTO'];}else{$$scheme=(isset($$_SERVER['HTTPS'])&&$$_SERVER['HTTPS']==='on')?'https':'http';}$$host=isset($$_SERVER['HTTP_X_FORWARDED_HOST'])?$$_SERVER['HTTP_X_FORWARDED_HOST']:(isset($$_SERVER['HTTP_HOST'])?$$_SERVER['HTTP_HOST']:'${config.hostname}');$$host=preg_replace('/:\\d+$/','',$$host);if(!defined('WP_HOME')){define('WP_HOME',$$scheme.'://'.$$host);}if(!defined('WP_SITEURL')){define('WP_SITEURL',$$scheme.'://'.$$host);}`;
+  let wpConfigExtra: string;
+  if (isLocalhostMode) {
+    // localhostモード: ポート番号を保持（http://localhost:8080）
+    wpConfigExtra = `$$scheme=(isset($$_SERVER['HTTPS'])&&$$_SERVER['HTTPS']==='on')?'https':'http';$$host=isset($$_SERVER['HTTP_HOST'])?$$_SERVER['HTTP_HOST']:'localhost:${port}';if(!defined('WP_HOME')){define('WP_HOME',$$scheme.'://'.$$host);}if(!defined('WP_SITEURL')){define('WP_SITEURL',$$scheme.'://'.$$host);}`;
+  } else {
+    // カスタムホスト名モード: リバースプロキシ対応、ポート番号削除
+    wpConfigExtra = `if(isset($$_SERVER['HTTP_X_FORWARDED_PROTO'])){$$_SERVER['HTTPS']=($$_SERVER['HTTP_X_FORWARDED_PROTO']==='https')?'on':'off';$$scheme=$$_SERVER['HTTP_X_FORWARDED_PROTO'];}else{$$scheme=(isset($$_SERVER['HTTPS'])&&$$_SERVER['HTTPS']==='on')?'https':'http';}$$host=isset($$_SERVER['HTTP_X_FORWARDED_HOST'])?$$_SERVER['HTTP_X_FORWARDED_HOST']:(isset($$_SERVER['HTTP_HOST'])?$$_SERVER['HTTP_HOST']:'${config.hostname}');$$host=preg_replace('/:\\d+$/','',$$host);if(!defined('WP_HOME')){define('WP_HOME',$$scheme.'://'.$$host);}if(!defined('WP_SITEURL')){define('WP_SITEURL',$$scheme.'://'.$$host);}`;
+  }
   // YAMLで環境変数値を二重引用符で囲むため、\" と \\ をエスケープ（単一引用符はそのまま）
   const wpConfigExtraEscaped = wpConfigExtra.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 
@@ -79,8 +87,9 @@ ${dbCommand ? `    command: '${dbCommand}'` : ""}
       - ${dbService}
     image: wordpress:${wpTag}
     restart: always
-    expose:
-      - 80
+${isLocalhostMode ? `    ports:
+      - "${port}:80"` : `    expose:
+      - 80`}
     volumes:
       - ./src:/var/www/html
       - ./php/custom.ini:/usr/local/etc/php/conf.d/zzz-custom.ini:ro
@@ -98,7 +107,7 @@ ${config.php.locale ? `      - LANG=${config.php.locale}\n      - LC_ALL=${confi
     networks:
       - wp
 
-  caddy:
+${isLocalhostMode ? "" : `  caddy:
     container_name: \${PROJECT_NAME}_caddy
     image: caddy:2-alpine
     restart: always
@@ -117,7 +126,7 @@ ${config.php.locale ? `      - LANG=${config.php.locale}\n      - LC_ALL=${confi
     networks:
       - wp
 
-  mailpit:
+`}  mailpit:
     container_name: \${PROJECT_NAME}_mailpit
     image: axllent/mailpit
     restart: always
@@ -130,14 +139,53 @@ ${config.php.locale ? `      - LANG=${config.php.locale}\n      - LC_ALL=${confi
     networks:
       - wp
 
+  # WP-CLI + rsync/ssh: docker compose run --rm wpcli <command>
+  # 例: docker compose run --rm wpcli plugin list
+  # 例: docker compose run --rm wpcli rsync -avz /var/www/html/wp-content/themes/ user@host:/path/
+  wpcli:
+    container_name: \${PROJECT_NAME}_wpcli
+    build:
+      context: ./docker/wpcli
+      dockerfile: Dockerfile
+    depends_on:
+      - ${dbService}
+      - wordpress
+    volumes:
+      - ./src:/var/www/html
+      - ~/.ssh:/home/www-data/.ssh:ro
+    environment:
+      - WORDPRESS_DB_HOST=${dbService}
+      - WORDPRESS_DB_USER=\${WORDPRESS_DB_USER}
+      - WORDPRESS_DB_PASSWORD=\${WORDPRESS_DB_PASSWORD}
+      - WORDPRESS_DB_NAME=\${WORDPRESS_DB_NAME}
+    networks:
+      - wp
+    user: "33:33"
+    entrypoint: ["wp", "--allow-root"]
+    profiles:
+      - cli
+
+  # Composer: docker compose run --rm composer <command>
+  # 例: docker compose run --rm composer require vendor/package
+  composer:
+    container_name: \${PROJECT_NAME}_composer
+    image: composer:latest
+    volumes:
+      - ./src:/app
+    working_dir: /app
+    networks:
+      - wp
+    profiles:
+      - cli
+
 networks:
   wp:
     name: \${PROJECT_NAME}_wp
 
 volumes:
-  db_data:
+  db_data:${isLocalhostMode ? "" : `
   caddy_data:
-  caddy_config:
+  caddy_config:`}
 `;
 }
 
@@ -251,5 +299,30 @@ WORDPRESS_DEBUG=${config.wordpress.debug ? "1" : "0"}
 # -------------------------------------------
 WORDPRESS_SMTP_HOST=mailpit
 WORDPRESS_SMTP_PORT=1025
+`;
+}
+
+/**
+ * WP-CLI用Dockerfileを生成（rsync/ssh付き）
+ * ファイル同期やリモートサーバーとの連携に使用
+ */
+export function generateWpcliDockerfile(): string {
+  return `# WP-CLI + rsync/ssh
+# ファイル同期とリモートサーバー連携用
+
+FROM wordpress:cli
+
+USER root
+
+# rsync と openssh-client をインストール
+# wordpress:cli は Alpine ベースのため apk を使用
+RUN apk add --no-cache rsync openssh-client
+
+# www-data ユーザーの .ssh ディレクトリを作成
+RUN mkdir -p /home/www-data/.ssh && \\
+    chown -R www-data:www-data /home/www-data/.ssh && \\
+    chmod 700 /home/www-data/.ssh
+
+USER www-data
 `;
 }
