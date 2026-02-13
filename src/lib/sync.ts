@@ -291,13 +291,18 @@ export async function validateRemotePath(
       sshArgs.push("-i", keyPath);
     }
 
-    const checkPath = target.wordpressPath.endsWith("/")
-      ? target.wordpressPath + "wp-config.php"
-      : target.wordpressPath + "/wp-config.php";
+    const wpPath = target.wordpressPath.endsWith("/")
+      ? target.wordpressPath.slice(0, -1)
+      : target.wordpressPath;
 
-    // リモートで実行するコマンドは1つの文字列で渡す（パス内の ' をエスケープ）
-    const quotedPath = "'" + checkPath.replace(/'/g, "'\"'\"'") + "'";
-    const remoteCmd = `test -f ${quotedPath} && echo valid`;
+    // wp-config.php は DocumentRoot 内、または親ディレクトリにある場合がある
+    // (KUSANAGI などセキュリティ目的で親に配置するケース)
+    const checkPath1 = wpPath + "/wp-config.php";
+    const checkPath2 = wpPath.replace(/\/[^/]+$/, "") + "/wp-config.php";
+
+    const quotedPath1 = "'" + checkPath1.replace(/'/g, "'\"'\"'") + "'";
+    const quotedPath2 = "'" + checkPath2.replace(/'/g, "'\"'\"'") + "'";
+    const remoteCmd = `(test -f ${quotedPath1} || test -f ${quotedPath2}) && echo valid`;
     sshArgs.push(`${user}@${host}`, remoteCmd);
 
     const { stdout } = await execFileAsync("ssh", sshArgs, {
