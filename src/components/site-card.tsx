@@ -23,6 +23,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { DbRestoreDialog } from "@/components/db-restore-dialog";
 import {
   ExternalLink,
   Play,
@@ -506,6 +507,10 @@ export function SiteCard({ site }: SiteCardProps) {
               )}
               {isInstallingPlugins ? "インストール中..." : "プラグイン"}
             </Button>
+            <DbRestoreDialog
+              siteId={site.id}
+              siteName={site.name}
+            />
             <Button
               size="sm"
               variant="outline"
