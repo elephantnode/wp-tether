@@ -1,7 +1,7 @@
 "use client";
 
-import { Suspense, useState, useEffect } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useState, useEffect } from "react";
+import { useRouter, useParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -25,9 +25,9 @@ import {
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Loader2 } from "lucide-react";
+import { DeployTarget } from "@/types";
 
 const formSchema = z.object({
-  siteId: z.string().min(1, "サイトを選択してください"),
   name: z
     .string()
     .min(1, "ターゲット名を入力してください")
@@ -49,62 +49,71 @@ const formSchema = z.object({
 
 type FormValues = z.infer<typeof formSchema>;
 
-const defaultValues: FormValues = {
-  siteId: "",
-  name: "",
-  type: "ssh",
-  vhost: "https://",
-  wordpressPath: "/var/www/html",
-  sshHost: "",
-  sshUser: "",
-  sshPort: 22,
-  sshKeyPath: "~/.ssh/id_rsa",
-  dbHost: "localhost",
-  dbName: "",
-  dbUser: "",
-  dbPassword: "",
-};
-
-interface Site {
-  id: string;
-  name: string;
-}
-
-function NewDeployTargetForm() {
+export default function EditDeployTargetPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const preselectedSiteId = searchParams.get("siteId");
+  const params = useParams();
+  const targetId = params.id as string;
 
-  const [sites, setSites] = useState<Site[]>([]);
-  const [isLoadingSites, setIsLoadingSites] = useState(true);
+  const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [target, setTarget] = useState<DeployTarget | null>(null);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      ...defaultValues,
-      siteId: preselectedSiteId || "",
+      name: "",
+      type: "ssh",
+      vhost: "",
+      wordpressPath: "",
+      sshHost: "",
+      sshUser: "",
+      sshPort: 22,
+      sshKeyPath: "",
+      dbHost: "localhost",
+      dbName: "",
+      dbUser: "",
+      dbPassword: "",
     },
   });
 
   const watchType = form.watch("type");
 
-  // サイト一覧を取得
+  // ターゲット情報を取得
   useEffect(() => {
-    async function fetchSites() {
+    async function fetchTarget() {
       try {
-        const res = await fetch("/api/sites");
+        const res = await fetch(`/api/deploy-targets/${targetId}`);
+        if (!res.ok) {
+          throw new Error("ターゲットが見つかりません");
+        }
         const data = await res.json();
-        setSites(data.sites || []);
+        const t: DeployTarget = data.target;
+        setTarget(t);
+
+        // フォームに値をセット
+        form.reset({
+          name: t.name,
+          type: t.type,
+          vhost: t.vhost,
+          wordpressPath: t.wordpressPath,
+          sshHost: t.ssh?.host || "",
+          sshUser: t.ssh?.user || "",
+          sshPort: t.ssh?.port || 22,
+          sshKeyPath: t.ssh?.keyPath || "",
+          dbHost: t.database.host,
+          dbName: t.database.name,
+          dbUser: t.database.user,
+          dbPassword: t.database.password || "",
+        });
       } catch (error) {
-        console.error("Failed to fetch sites:", error);
+        setSubmitError(error instanceof Error ? error.message : "読み込みに失敗しました");
       } finally {
-        setIsLoadingSites(false);
+        setIsLoading(false);
       }
     }
-    fetchSites();
-  }, []);
+    fetchTarget();
+  }, [targetId, form]);
 
   async function onSubmit(data: FormValues) {
     setIsSubmitting(true);
@@ -112,7 +121,6 @@ function NewDeployTargetForm() {
 
     try {
       const payload = {
-        siteId: data.siteId,
         name: data.name,
         type: data.type,
         vhost: data.vhost,
@@ -129,11 +137,10 @@ function NewDeployTargetForm() {
           user: data.dbUser,
           password: data.dbPassword || "",
         },
-        exclude: [],
       };
 
-      const res = await fetch("/api/deploy-targets", {
-        method: "POST",
+      const res = await fetch(`/api/deploy-targets/${targetId}`, {
+        method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
@@ -141,7 +148,7 @@ function NewDeployTargetForm() {
       const result = await res.json();
 
       if (!res.ok) {
-        throw new Error(result.error || "作成に失敗しました");
+        throw new Error(result.error || "更新に失敗しました");
       }
 
       router.push("/deploy");
@@ -152,12 +159,31 @@ function NewDeployTargetForm() {
     }
   }
 
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (!target) {
+    return (
+      <div className="text-center py-12">
+        <p className="text-destructive">{submitError || "ターゲットが見つかりません"}</p>
+        <Button className="mt-4" onClick={() => router.push("/deploy")}>
+          戻る
+        </Button>
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-2xl">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold">デプロイターゲット追加</h1>
+        <h1 className="text-2xl font-bold">デプロイターゲット編集</h1>
         <p className="text-muted-foreground">
-          リモートサーバーへの接続設定を追加します
+          「{target.name}」の設定を変更します
         </p>
       </div>
 
@@ -166,39 +192,9 @@ function NewDeployTargetForm() {
           {/* 基本設定 */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg flex items-center gap-2">
-                基本設定
-                {isLoadingSites && (
-                  <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
-                )}
-              </CardTitle>
+              <CardTitle className="text-lg">基本設定</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <FormField
-                control={form.control}
-                name="siteId"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>対象サイト</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="サイトを選択" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {sites.map((site) => (
-                          <SelectItem key={site.id} value={site.id}>
-                            {site.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
               <FormField
                 control={form.control}
                 name="name"
@@ -428,9 +424,9 @@ function NewDeployTargetForm() {
 
           {/* アクション */}
           <div className="flex gap-4">
-            <Button type="submit" disabled={isSubmitting || isLoadingSites}>
+            <Button type="submit" disabled={isSubmitting}>
               {isSubmitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-              作成
+              保存
             </Button>
             <Button
               type="button"
@@ -443,13 +439,5 @@ function NewDeployTargetForm() {
         </form>
       </Form>
     </div>
-  );
-}
-
-export default function NewDeployTargetPage() {
-  return (
-    <Suspense fallback={<div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-muted-foreground" /></div>}>
-      <NewDeployTargetForm />
-    </Suspense>
   );
 }

@@ -107,6 +107,14 @@ export type DeployScope =
   | "mu-plugins"
   | "languages";
 
+/**
+ * 同期モード
+ * - mirror: 完全同期（削除も含む）
+ * - additive: 追加・更新のみ（削除しない）
+ * - update: 新しいファイルのみ（宛先が新しければスキップ）
+ */
+export type SyncMode = "mirror" | "additive" | "update";
+
 export interface DeployTask {
   id: string;
   siteId: string;

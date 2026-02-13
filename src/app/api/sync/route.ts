@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { DeployDirection, DeployScope } from "@/types";
+import { DeployDirection, DeployScope, SyncMode } from "@/types";
 import { getDeployTarget } from "@/lib/deploy-targets";
 import { getSite } from "@/lib/sites";
 import { executeSync } from "@/lib/sync";
@@ -9,6 +9,7 @@ interface SyncRequest {
   direction: DeployDirection;
   scopes: DeployScope[];
   dryRun?: boolean;
+  mode?: SyncMode;
 }
 
 /**
@@ -67,6 +68,7 @@ export async function POST(request: NextRequest) {
       direction: body.direction,
       scopes: body.scopes,
       dryRun: body.dryRun ?? false,
+      mode: body.mode ?? "mirror",
     });
 
     // 結果をまとめる

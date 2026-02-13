@@ -2,7 +2,7 @@ import { execFile } from "child_process";
 import { promisify } from "util";
 import path from "path";
 import os from "os";
-import { DeployTarget, DeployDirection, DeployScope } from "@/types";
+import { DeployTarget, DeployDirection, DeployScope, SyncMode } from "@/types";
 
 const execFileAsync = promisify(execFile);
 
@@ -47,6 +47,7 @@ interface SyncOptions {
   direction: DeployDirection;
   scopes: DeployScope[];
   dryRun?: boolean;
+  mode?: SyncMode;
 }
 
 interface SyncResult {
@@ -65,13 +66,28 @@ function buildRsyncArgs(
   direction: DeployDirection,
   excludes: string[],
   sshOptions: string,
-  dryRun: boolean
+  dryRun: boolean,
+  mode: SyncMode = "mirror"
 ): string[] {
   const args = [
     "-avz",
-    "--delete",
     "-e", sshOptions,
   ];
+
+  // 同期モードに応じたフラグ
+  switch (mode) {
+    case "mirror":
+      // 完全同期: 送信先を送信元と完全一致させる（削除も含む）
+      args.push("--delete");
+      break;
+    case "additive":
+      // 追加・更新のみ: 削除しない（デフォルトのrsync動作）
+      break;
+    case "update":
+      // 新しいファイルのみ: 宛先が新しければスキップ
+      args.push("--update");
+      break;
+  }
 
   // 除外パターン
   for (const pattern of excludes) {
@@ -136,7 +152,8 @@ async function syncScope(
   target: DeployTarget,
   scope: Exclude<DeployScope, "all" | "db">,
   direction: DeployDirection,
-  dryRun: boolean
+  dryRun: boolean,
+  mode: SyncMode = "mirror"
 ): Promise<SyncResult> {
   try {
     const relativePath = SCOPE_PATHS[scope];
@@ -151,7 +168,8 @@ async function syncScope(
       direction,
       excludes,
       sshOptions,
-      dryRun
+      dryRun,
+      mode
     );
 
     // ホストの rsync で実行（鍵はホストにのみ存在）
@@ -179,7 +197,7 @@ async function syncScope(
  * 同期を実行
  */
 export async function executeSync(options: SyncOptions): Promise<SyncResult[]> {
-  const { sitePath, target, direction, scopes, dryRun = false } = options;
+  const { sitePath, target, direction, scopes, dryRun = false, mode = "mirror" } = options;
   const results: SyncResult[] = [];
 
   // "all" が含まれている場合は全スコープに展開（dbを除く）
@@ -194,7 +212,7 @@ export async function executeSync(options: SyncOptions): Promise<SyncResult[]> {
 
   // 各スコープを順番に同期
   for (const scope of targetScopes) {
-    const result = await syncScope(sitePath, target, scope, direction, dryRun);
+    const result = await syncScope(sitePath, target, scope, direction, dryRun, mode);
     results.push(result);
 
     // エラーが発生した場合は中断

@@ -26,6 +26,7 @@ import {
   CheckCircle,
   XCircle,
   Wifi,
+  Pencil,
 } from "lucide-react";
 import { SyncDialog } from "./sync-dialog";
 
@@ -144,8 +145,7 @@ export function DeployTargetCard({ target, sitePath, siteStatus }: DeployTargetC
             size="sm"
             variant="outline"
             onClick={handleTestConnection}
-            disabled={isTesting || !isRunning}
-            title={!isRunning ? "サイトを起動してください" : undefined}
+            disabled={isTesting}
           >
             {isTesting ? (
               <Loader2 className="w-4 h-4 mr-1 animate-spin" />
@@ -158,11 +158,18 @@ export function DeployTargetCard({ target, sitePath, siteStatus }: DeployTargetC
           <Button
             size="sm"
             onClick={() => setShowSyncDialog(true)}
-            disabled={!isRunning}
-            title={!isRunning ? "サイトを起動してください" : undefined}
           >
             <FolderSync className="w-4 h-4 mr-1" />
             同期
+          </Button>
+
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => router.push(`/deploy/${target.id}/edit`)}
+          >
+            <Pencil className="w-4 h-4 mr-1" />
+            編集
           </Button>
 
           <AlertDialog>

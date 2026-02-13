@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { DeployTarget, DeployDirection, DeployScope } from "@/types";
+import { DeployTarget, DeployDirection, DeployScope, SyncMode } from "@/types";
 import {
   Dialog,
   DialogContent,
@@ -35,9 +35,16 @@ const SCOPES: { value: Exclude<DeployScope, "all" | "db">; label: string; descri
   { value: "languages", label: "言語ファイル", description: "wp-content/languages/" },
 ];
 
+const SYNC_MODES: { value: SyncMode; label: string; description: string }[] = [
+  { value: "mirror", label: "完全同期", description: "送信先を送信元と完全一致させる（不要ファイルは削除）" },
+  { value: "additive", label: "追加・更新のみ", description: "新規・更新ファイルのみ転送（削除しない）" },
+  { value: "update", label: "新しいもののみ", description: "送信先が新しいファイルはスキップ" },
+];
+
 export function SyncDialog({ open, onOpenChange, target }: SyncDialogProps) {
   const [direction, setDirection] = useState<DeployDirection>("push");
   const [selectedScopes, setSelectedScopes] = useState<Set<DeployScope>>(new Set(["themes"]));
+  const [syncMode, setSyncMode] = useState<SyncMode>("additive");
   const [dryRun, setDryRun] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
   const [result, setResult] = useState<{
@@ -68,6 +75,7 @@ export function SyncDialog({ open, onOpenChange, target }: SyncDialogProps) {
           direction,
           scopes: Array.from(selectedScopes),
           dryRun,
+          mode: syncMode,
         }),
       });
 
@@ -155,6 +163,42 @@ export function SyncDialog({ open, onOpenChange, target }: SyncDialogProps) {
                     <div className="space-y-1">
                       <Label className="cursor-pointer">{scope.label}</Label>
                       <p className="text-xs text-muted-foreground">{scope.description}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* 同期モード選択 */}
+            <div className="space-y-3">
+              <Label className="text-base font-medium">同期モード</Label>
+              <div className="grid grid-cols-1 gap-2">
+                {SYNC_MODES.map((mode) => (
+                  <div
+                    key={mode.value}
+                    className={`flex items-start space-x-3 p-3 rounded-lg border cursor-pointer transition-colors ${
+                      syncMode === mode.value
+                        ? "border-primary bg-primary/5"
+                        : "hover:bg-muted/50"
+                    }`}
+                    onClick={() => setSyncMode(mode.value)}
+                  >
+                    <div className="mt-0.5">
+                      <div
+                        className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
+                          syncMode === mode.value
+                            ? "border-primary"
+                            : "border-muted-foreground"
+                        }`}
+                      >
+                        {syncMode === mode.value && (
+                          <div className="w-2 h-2 rounded-full bg-primary" />
+                        )}
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="cursor-pointer font-medium">{mode.label}</Label>
+                      <p className="text-xs text-muted-foreground">{mode.description}</p>
                     </div>
                   </div>
                 ))}
