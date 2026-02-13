@@ -18,7 +18,7 @@ export async function GET(
     }
 
     const backups = await listRemoteBackups(target);
-    const backupDir = getRemoteBackupDir(target.name);
+    const backupDir = await getRemoteBackupDir(target);
 
     return NextResponse.json({ backups, backupDir });
   } catch (error) {

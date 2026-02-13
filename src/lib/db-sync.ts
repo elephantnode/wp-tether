@@ -392,13 +392,30 @@ async function searchReplaceRemote(
 }
 
 /**
- * リモートバックアップディレクトリのパスを取得
+ * リモートバックアップディレクトリの相対パスを取得
  * セキュリティのため、Webルート外（ホームディレクトリ）に保存
  */
-export function getRemoteBackupDir(targetName: string): string {
+export function getRemoteBackupDirRelative(targetName: string): string {
   // サイト名をディレクトリ名に使用（安全な文字のみ）
   const safeName = targetName.replace(/[^a-zA-Z0-9_-]/g, "_");
-  return `~/wp-tether-backups/${safeName}`;
+  return `wp-tether-backups/${safeName}`;
+}
+
+/**
+ * リモートのホームディレクトリを取得
+ */
+async function getRemoteHomeDir(target: DeployTarget): Promise<string> {
+  const { stdout } = await executeRemoteCommand(target, "echo $HOME");
+  return stdout.trim();
+}
+
+/**
+ * リモートバックアップディレクトリのフルパスを取得
+ */
+export async function getRemoteBackupDir(target: DeployTarget): Promise<string> {
+  const homeDir = await getRemoteHomeDir(target);
+  const relativePath = getRemoteBackupDirRelative(target.name);
+  return `${homeDir}/${relativePath}`;
 }
 
 /**
@@ -410,11 +427,11 @@ async function backupRemoteDb(
 ): Promise<string> {
   const { wordpressPath } = target;
   const timestamp = new Date().toISOString().replace(/[-:]/g, "").replace("T", "_").slice(0, 15);
-  const backupDir = getRemoteBackupDir(target.name);
+  const backupDir = await getRemoteBackupDir(target);
   const backupPath = `${backupDir}/db_${timestamp}.sql`;
 
   // バックアップディレクトリ作成（ホームディレクトリ配下、Webアクセス不可）
-  await executeRemoteCommand(target, `mkdir -p ${backupDir}`);
+  await executeRemoteCommand(target, `mkdir -p '${backupDir}'`);
 
   let command: string;
 
@@ -573,13 +590,13 @@ export async function executeDbSync(
 export async function listRemoteBackups(
   target: DeployTarget
 ): Promise<{ filename: string; createdAt: string; size: number }[]> {
-  const backupDir = getRemoteBackupDir(target.name);
+  const backupDir = await getRemoteBackupDir(target);
 
   try {
     // ls -la でファイル一覧取得（タイムスタンプとサイズ付き）
     const { stdout } = await executeRemoteCommand(
       target,
-      `ls -la ${backupDir}/*.sql 2>/dev/null || echo ""`
+      `ls -la '${backupDir}'/*.sql 2>/dev/null || echo ""`
     );
 
     if (!stdout.trim()) {
@@ -619,7 +636,7 @@ export async function restoreRemoteBackup(
   target: DeployTarget,
   filename: string
 ): Promise<{ success: boolean; output: string; error?: string }> {
-  const backupDir = getRemoteBackupDir(target.name);
+  const backupDir = await getRemoteBackupDir(target);
   const backupPath = `${backupDir}/${filename}`;
   const { wordpressPath } = target;
   const logs: string[] = [];
