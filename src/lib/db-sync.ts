@@ -593,10 +593,10 @@ export async function listRemoteBackups(
   const backupDir = await getRemoteBackupDir(target);
 
   try {
-    // ls -la でファイル一覧取得（タイムスタンプとサイズ付き）
+    // find + stat で確実にファイル情報を取得（サーバー間の差異を吸収）
     const { stdout } = await executeRemoteCommand(
       target,
-      `ls -la '${backupDir}'/*.sql 2>/dev/null || echo ""`
+      `find '${backupDir}' -maxdepth 1 -name '*.sql' -type f -exec stat --format='%n|%Y|%s' {} \\; 2>/dev/null || find '${backupDir}' -maxdepth 1 -name '*.sql' -type f -exec stat -f '%N|%m|%z' {} \\; 2>/dev/null || echo ""`
     );
 
     if (!stdout.trim()) {
@@ -607,15 +607,28 @@ export async function listRemoteBackups(
     const lines = stdout.trim().split("\n");
 
     for (const line of lines) {
-      // -rw-r--r-- 1 user group 12345 Jan 15 10:30 filename.sql
-      const match = line.match(/\S+\s+\d+\s+\S+\s+\S+\s+(\d+)\s+(\w+\s+\d+\s+[\d:]+)\s+(.+\.sql)$/);
-      if (match) {
-        const [, size, dateStr, filepath] = match;
+      // format: /path/to/file.sql|1707800000|12345
+      const parts = line.split("|");
+      if (parts.length >= 3) {
+        const filepath = parts[0];
+        const timestamp = parseInt(parts[1], 10);
+        const size = parseInt(parts[2], 10);
         const filename = filepath.split("/").pop() || filepath;
+
+        // Unixタイムスタンプを日時文字列に変換
+        const date = new Date(timestamp * 1000);
+        const createdAt = date.toLocaleString("ja-JP", {
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+        });
+
         backups.push({
           filename,
-          createdAt: dateStr,
-          size: parseInt(size, 10),
+          createdAt,
+          size,
         });
       }
     }
