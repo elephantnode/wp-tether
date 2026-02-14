@@ -8,6 +8,11 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -17,7 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Loader2, Save, Package, Download, Upload, Database, Globe, Trash2 } from "lucide-react";
+import { Loader2, Save, Package, Download, Upload, Database, Globe, Trash2, ChevronDown } from "lucide-react";
 
 export default function SettingsPage() {
   const [plugins, setPlugins] = useState("");
@@ -35,6 +40,12 @@ export default function SettingsPage() {
 
   // クリーンアップ用state
   const [isCleaning, setIsCleaning] = useState(false);
+
+  // 展開状態
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({
+    data: false,
+    plugins: false,
+  });
 
   useEffect(() => {
     fetchPresets();
@@ -171,6 +182,10 @@ export default function SettingsPage() {
     }
   }
 
+  function toggleSection(key: string) {
+    setOpenSections((prev) => ({ ...prev, [key]: !prev[key] }));
+  }
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -180,230 +195,259 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <h1 className="text-2xl font-bold">設定</h1>
 
       {/* データエクスポート/インポート */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Database className="w-5 h-5" />
-            データ管理
-          </CardTitle>
-          <CardDescription>
-            サイト一覧やデプロイターゲットの設定をJSON形式でエクスポート/インポートできます。
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          {/* インポートモード選択 */}
-          <div className="flex items-center gap-4">
-            <span className="text-sm font-medium">インポートモード:</span>
-            <Select value={importMode} onValueChange={(v) => setImportMode(v as "merge" | "replace")}>
-              <SelectTrigger className="w-48">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="merge">マージ（追加・更新）</SelectItem>
-                <SelectItem value="replace">上書き（置き換え）</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+      <Collapsible open={openSections.data} onOpenChange={() => toggleSection("data")}>
+        <Card>
+          <CollapsibleTrigger asChild>
+            <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Database className="w-5 h-5" />
+                  <div>
+                    <CardTitle className="text-base">データ管理</CardTitle>
+                    <CardDescription className="mt-1">
+                      サイト一覧やデプロイターゲットの設定をエクスポート/インポート
+                    </CardDescription>
+                  </div>
+                </div>
+                <ChevronDown
+                  className={`w-5 h-5 text-muted-foreground transition-transform ${
+                    openSections.data ? "rotate-180" : ""
+                  }`}
+                />
+              </div>
+            </CardHeader>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <CardContent className="space-y-6 pt-0">
+              {/* インポートモード選択 */}
+              <div className="flex items-center gap-4">
+                <span className="text-sm font-medium">インポートモード:</span>
+                <Select value={importMode} onValueChange={(v) => setImportMode(v as "merge" | "replace")}>
+                  <SelectTrigger className="w-48">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="merge">マージ（追加・更新）</SelectItem>
+                    <SelectItem value="replace">上書き（置き換え）</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
 
-          {/* サイト一覧 */}
-          <div className="border rounded-lg p-4 space-y-3">
-            <div className="flex items-center gap-2">
-              <Globe className="w-4 h-4" />
-              <span className="font-medium">サイト一覧</span>
-            </div>
-            <div className="flex items-center gap-3">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => handleExport("sites")}
-                disabled={isExporting === "sites"}
-              >
-                {isExporting === "sites" ? (
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                ) : (
-                  <Download className="w-4 h-4 mr-2" />
-                )}
-                エクスポート
-              </Button>
-              <input
-                ref={sitesFileInputRef}
-                type="file"
-                accept=".json"
-                className="hidden"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) handleImport("sites", file);
-                }}
-              />
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => sitesFileInputRef.current?.click()}
-                disabled={isImporting === "sites"}
-              >
-                {isImporting === "sites" ? (
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                ) : (
-                  <Upload className="w-4 h-4 mr-2" />
-                )}
-                インポート
-              </Button>
-            </div>
-          </div>
+              {/* サイト一覧 */}
+              <div className="border rounded-lg p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <Globe className="w-4 h-4" />
+                  <span className="font-medium">サイト一覧</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleExport("sites")}
+                    disabled={isExporting === "sites"}
+                  >
+                    {isExporting === "sites" ? (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    ) : (
+                      <Download className="w-4 h-4 mr-2" />
+                    )}
+                    エクスポート
+                  </Button>
+                  <input
+                    ref={sitesFileInputRef}
+                    type="file"
+                    accept=".json"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) handleImport("sites", file);
+                    }}
+                  />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => sitesFileInputRef.current?.click()}
+                    disabled={isImporting === "sites"}
+                  >
+                    {isImporting === "sites" ? (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    ) : (
+                      <Upload className="w-4 h-4 mr-2" />
+                    )}
+                    インポート
+                  </Button>
+                </div>
+              </div>
 
-          {/* デプロイターゲット */}
-          <div className="border rounded-lg p-4 space-y-3">
-            <div className="flex items-center gap-2">
-              <Database className="w-4 h-4" />
-              <span className="font-medium">デプロイターゲット</span>
-            </div>
-            <div className="flex items-center gap-3">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => handleExport("deploy-targets")}
-                disabled={isExporting === "deploy-targets"}
-              >
-                {isExporting === "deploy-targets" ? (
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                ) : (
-                  <Download className="w-4 h-4 mr-2" />
-                )}
-                エクスポート
-              </Button>
-              <input
-                ref={targetsFileInputRef}
-                type="file"
-                accept=".json"
-                className="hidden"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) handleImport("deploy-targets", file);
-                }}
-              />
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => targetsFileInputRef.current?.click()}
-                disabled={isImporting === "deploy-targets"}
-              >
-                {isImporting === "deploy-targets" ? (
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                ) : (
-                  <Upload className="w-4 h-4 mr-2" />
-                )}
-                インポート
-              </Button>
-            </div>
-          </div>
+              {/* デプロイターゲット */}
+              <div className="border rounded-lg p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <Database className="w-4 h-4" />
+                  <span className="font-medium">デプロイターゲット</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleExport("deploy-targets")}
+                    disabled={isExporting === "deploy-targets"}
+                  >
+                    {isExporting === "deploy-targets" ? (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    ) : (
+                      <Download className="w-4 h-4 mr-2" />
+                    )}
+                    エクスポート
+                  </Button>
+                  <input
+                    ref={targetsFileInputRef}
+                    type="file"
+                    accept=".json"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) handleImport("deploy-targets", file);
+                    }}
+                  />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => targetsFileInputRef.current?.click()}
+                    disabled={isImporting === "deploy-targets"}
+                  >
+                    {isImporting === "deploy-targets" ? (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    ) : (
+                      <Upload className="w-4 h-4 mr-2" />
+                    )}
+                    インポート
+                  </Button>
+                </div>
+              </div>
 
-          {/* 孤児データクリーンアップ */}
-          <div className="border rounded-lg p-4 space-y-3 border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-950/20">
-            <div className="flex items-center gap-2">
-              <Trash2 className="w-4 h-4 text-amber-600" />
-              <span className="font-medium">孤児データのクリーンアップ</span>
-            </div>
-            <p className="text-sm text-muted-foreground">
-              削除されたサイトに紐づくデプロイターゲットを自動的に削除します。
-            </p>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleCleanup}
-              disabled={isCleaning}
-            >
-              {isCleaning ? (
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              ) : (
-                <Trash2 className="w-4 h-4 mr-2" />
+              {/* 孤児データクリーンアップ */}
+              <div className="border rounded-lg p-4 space-y-3 border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-950/20">
+                <div className="flex items-center gap-2">
+                  <Trash2 className="w-4 h-4 text-amber-600" />
+                  <span className="font-medium">孤児データのクリーンアップ</span>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  削除されたサイトに紐づくデプロイターゲットを自動的に削除します。
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleCleanup}
+                  disabled={isCleaning}
+                >
+                  {isCleaning ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <Trash2 className="w-4 h-4 mr-2" />
+                  )}
+                  クリーンアップ実行
+                </Button>
+              </div>
+
+              {importMessage && (
+                <div
+                  className={`p-3 rounded-md text-sm ${
+                    importMessage.type === "success"
+                      ? "bg-green-50 dark:bg-green-950/30 text-green-800 dark:text-green-200"
+                      : "bg-red-50 dark:bg-red-950/30 text-red-800 dark:text-red-200"
+                  }`}
+                >
+                  {importMessage.text}
+                </div>
               )}
-              クリーンアップ実行
-            </Button>
-          </div>
 
-          {importMessage && (
-            <div
-              className={`p-3 rounded-md text-sm ${
-                importMessage.type === "success"
-                  ? "bg-green-50 dark:bg-green-950/30 text-green-800 dark:text-green-200"
-                  : "bg-red-50 dark:bg-red-950/30 text-red-800 dark:text-red-200"
-              }`}
-            >
-              {importMessage.text}
-            </div>
-          )}
-
-          <div className="text-sm text-muted-foreground">
-            <p className="font-medium mb-1">注意:</p>
-            <ul className="list-disc list-inside space-y-1">
-              <li><strong>マージ</strong>: 同じIDのデータは更新、新しいIDは追加</li>
-              <li><strong>上書き</strong>: 既存データを完全に置き換え</li>
-              <li>デプロイターゲットにはSSH秘密鍵のパスやDB認証情報が含まれます</li>
-            </ul>
-          </div>
-        </CardContent>
-      </Card>
+              <div className="text-sm text-muted-foreground">
+                <p className="font-medium mb-1">注意:</p>
+                <ul className="list-disc list-inside space-y-1">
+                  <li><strong>マージ</strong>: 同じIDのデータは更新、新しいIDは追加</li>
+                  <li><strong>上書き</strong>: 既存データを完全に置き換え</li>
+                  <li>デプロイターゲットにはSSH秘密鍵のパスやDB認証情報が含まれます</li>
+                </ul>
+              </div>
+            </CardContent>
+          </CollapsibleContent>
+        </Card>
+      </Collapsible>
 
       {/* プラグインプリセット */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Package className="w-5 h-5" />
-            プラグインプリセット
-          </CardTitle>
-          <CardDescription>
-            新規サイトにインストールするプラグインのスラッグを1行ずつ入力してください。
-            サイト一覧から「プラグインインストール」ボタンで一括インストール + 有効化できます。
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <Textarea
-            placeholder="advanced-custom-fields
+      <Collapsible open={openSections.plugins} onOpenChange={() => toggleSection("plugins")}>
+        <Card>
+          <CollapsibleTrigger asChild>
+            <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Package className="w-5 h-5" />
+                  <div>
+                    <CardTitle className="text-base">プラグインプリセット</CardTitle>
+                    <CardDescription className="mt-1">
+                      新規サイトにインストールするプラグイン一覧
+                    </CardDescription>
+                  </div>
+                </div>
+                <ChevronDown
+                  className={`w-5 h-5 text-muted-foreground transition-transform ${
+                    openSections.plugins ? "rotate-180" : ""
+                  }`}
+                />
+              </div>
+            </CardHeader>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <CardContent className="space-y-4 pt-0">
+              <Textarea
+                placeholder="advanced-custom-fields
 contact-form-7
 wp-mail-smtp"
-            value={plugins}
-            onChange={(e) => setPlugins(e.target.value)}
-            rows={10}
-            className="font-mono text-sm"
-          />
+                value={plugins}
+                onChange={(e) => setPlugins(e.target.value)}
+                rows={10}
+                className="font-mono text-sm"
+              />
 
-          <div className="flex items-center gap-4">
-            <Button onClick={handleSave} disabled={isSaving}>
-              {isSaving ? (
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              ) : (
-                <Save className="w-4 h-4 mr-2" />
-              )}
-              保存
-            </Button>
+              <div className="flex items-center gap-4">
+                <Button onClick={handleSave} disabled={isSaving}>
+                  {isSaving ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <Save className="w-4 h-4 mr-2" />
+                  )}
+                  保存
+                </Button>
 
-            {message && (
-              <span
-                className={
-                  message.type === "success"
-                    ? "text-green-600 text-sm"
-                    : "text-destructive text-sm"
-                }
-              >
-                {message.text}
-              </span>
-            )}
-          </div>
+                {message && (
+                  <span
+                    className={
+                      message.type === "success"
+                        ? "text-green-600 text-sm"
+                        : "text-destructive text-sm"
+                    }
+                  >
+                    {message.text}
+                  </span>
+                )}
+              </div>
 
-          <div className="text-sm text-muted-foreground">
-            <p className="font-medium mb-1">プラグインスラッグの確認方法:</p>
-            <p>
-              WordPress公式リポジトリのURLから確認できます。
-              <br />
-              例: <code className="bg-muted px-1 rounded">https://wordpress.org/plugins/<strong>contact-form-7</strong>/</code>
-            </p>
-          </div>
-        </CardContent>
-      </Card>
+              <div className="text-sm text-muted-foreground">
+                <p className="font-medium mb-1">プラグインスラッグの確認方法:</p>
+                <p>
+                  WordPress公式リポジトリのURLから確認できます。
+                  <br />
+                  例: <code className="bg-muted px-1 rounded">https://wordpress.org/plugins/<strong>contact-form-7</strong>/</code>
+                </p>
+              </div>
+            </CardContent>
+          </CollapsibleContent>
+        </Card>
+      </Collapsible>
     </div>
   );
 }
