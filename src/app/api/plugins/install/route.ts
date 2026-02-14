@@ -44,6 +44,16 @@ export async function POST(request: Request) {
       );
     }
 
+    // プラグイン名のホワイトリスト検証（WordPress.orgスラッグ形式: 英小文字、数字、ハイフンのみ）
+    const PLUGIN_SLUG_REGEX = /^[a-z0-9][a-z0-9-]*$/;
+    const invalidPlugins = presets.plugins.filter(p => !PLUGIN_SLUG_REGEX.test(p));
+    if (invalidPlugins.length > 0) {
+      return NextResponse.json(
+        { error: `無効なプラグイン名が含まれています: ${invalidPlugins.join(", ")}` },
+        { status: 400 }
+      );
+    }
+
     // WP-CLI でプラグインをインストール + 有効化
     const pluginList = presets.plugins.join(" ");
     const command = `docker compose run --rm wpcli plugin install ${pluginList} --activate`;

@@ -23,6 +23,15 @@ export async function POST(
       );
     }
 
+    // パストラバーサル対策: ファイル名のみに限定
+    const safeFilename = path.basename(filename);
+    if (safeFilename !== filename || filename.includes("..")) {
+      return NextResponse.json(
+        { error: "無効なファイル名です" },
+        { status: 400 }
+      );
+    }
+
     const site = await getSite(id);
     if (!site) {
       return NextResponse.json(

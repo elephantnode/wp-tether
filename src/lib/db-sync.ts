@@ -12,6 +12,14 @@ const execAsync = promisify(exec);
 const MAX_BACKUPS = 5;
 
 /**
+ * シェル用にシングルクォート内の文字列をエスケープ
+ * シングルクォートを '\\'' に置換して安全に埋め込む
+ */
+function shellEscape(str: string): string {
+  return "'" + str.replace(/'/g, "'\\''") + "'";
+}
+
+/**
  * SSH キーパスを展開（~ をホームディレクトリに置換）
  */
 function expandKeyPath(keyPath: string | undefined): string | undefined {
@@ -111,7 +119,7 @@ export async function detectRemoteCapabilities(
     // DB種別の検出
     const dbVersionResult = await executeRemoteCommand(
       target,
-      `mysql -h ${target.database.host} -u ${target.database.user} -p'${target.database.password}' -e "SELECT VERSION();" 2>/dev/null || echo ''`
+      `mysql -h ${shellEscape(target.database.host)} -u ${shellEscape(target.database.user)} -p${shellEscape(target.database.password)} -e "SELECT VERSION();" 2>/dev/null || echo ''`
     );
     const versionOutput = dbVersionResult.stdout.toLowerCase();
     if (versionOutput.includes("mariadb")) {
@@ -274,7 +282,7 @@ async function exportRemoteDb(
     const wpPath = capabilities.wpCliPath || "wp";
     if (excludeUsers) {
       // テーブル一覧を取得してユーザーテーブルを除外
-      const listCmd = `cd '${wordpressPath}' && ${wpPath} db tables --format=csv`;
+      const listCmd = `cd ${shellEscape(wordpressPath)} && ${wpPath} db tables --format=csv`;
       const { stdout: tablesOutput } = await executeRemoteCommand(target, listCmd);
 
       const tables = tablesOutput
@@ -283,22 +291,22 @@ async function exportRemoteDb(
         .filter((t) => !t.endsWith("_users") && !t.endsWith("_usermeta"))
         .join(",");
 
-      command = `cd '${wordpressPath}' && ${wpPath} db export --tables=${tables} ${tempFile}`;
+      command = `cd ${shellEscape(wordpressPath)} && ${wpPath} db export --tables=${tables} ${tempFile}`;
     } else {
-      command = `cd '${wordpressPath}' && ${wpPath} db export ${tempFile}`;
+      command = `cd ${shellEscape(wordpressPath)} && ${wpPath} db export ${tempFile}`;
     }
   } else if (capabilities.hasMariadbDump) {
     // mariadb-dumpを使用
     const ignoreTables = excludeUsers
-      ? `--ignore-table=${database.name}.wp_users --ignore-table=${database.name}.wp_usermeta`
+      ? `--ignore-table=${shellEscape(database.name)}.wp_users --ignore-table=${shellEscape(database.name)}.wp_usermeta`
       : "";
-    command = `mariadb-dump -h ${database.host} -u ${database.user} -p'${database.password}' ${ignoreTables} ${database.name} > ${tempFile}`;
+    command = `mariadb-dump -h ${shellEscape(database.host)} -u ${shellEscape(database.user)} -p${shellEscape(database.password)} ${ignoreTables} ${shellEscape(database.name)} > ${tempFile}`;
   } else if (capabilities.hasMysqldump) {
     // mysqldumpを使用
     const ignoreTables = excludeUsers
-      ? `--ignore-table=${database.name}.wp_users --ignore-table=${database.name}.wp_usermeta`
+      ? `--ignore-table=${shellEscape(database.name)}.wp_users --ignore-table=${shellEscape(database.name)}.wp_usermeta`
       : "";
-    command = `mysqldump -h ${database.host} -u ${database.user} -p'${database.password}' ${ignoreTables} ${database.name} > ${tempFile}`;
+    command = `mysqldump -h ${shellEscape(database.host)} -u ${shellEscape(database.user)} -p${shellEscape(database.password)} ${ignoreTables} ${shellEscape(database.name)} > ${tempFile}`;
   } else {
     throw new Error("リモートサーバーにDB操作ツールがありません（WP-CLI, mysqldump, mariadb-dump のいずれかが必要です）");
   }
@@ -356,9 +364,9 @@ async function importRemoteDb(
 
   if (capabilities.hasWpCli) {
     const wpPath = capabilities.wpCliPath || "wp";
-    command = `cd '${wordpressPath}' && ${wpPath} db import ${tempFile}`;
+    command = `cd ${shellEscape(wordpressPath)} && ${wpPath} db import ${tempFile}`;
   } else {
-    command = `mysql -h ${database.host} -u ${database.user} -p'${database.password}' ${database.name} < ${tempFile}`;
+    command = `mysql -h ${shellEscape(database.host)} -u ${shellEscape(database.user)} -p${shellEscape(database.password)} ${shellEscape(database.name)} < ${tempFile}`;
   }
 
   try {
@@ -385,7 +393,7 @@ async function searchReplaceRemote(
 
   const wpPath = capabilities.wpCliPath || "wp";
   const dryRunFlag = dryRun ? "--dry-run" : "";
-  const command = `cd '${target.wordpressPath}' && ${wpPath} search-replace '${oldUrl}' '${newUrl}' --all-tables --precise ${dryRunFlag}`;
+  const command = `cd ${shellEscape(target.wordpressPath)} && ${wpPath} search-replace ${shellEscape(oldUrl)} ${shellEscape(newUrl)} --all-tables --precise ${dryRunFlag}`;
 
   const { stdout, stderr } = await executeRemoteCommand(target, command, 300000);
   return stdout + (stderr ? `\n${stderr}` : "");
@@ -437,17 +445,17 @@ async function backupRemoteDb(
   const backupPath = `${backupDir}/db_${timestamp}.sql`;
 
   // バックアップディレクトリ作成（ホームディレクトリ配下、Webアクセス不可）
-  await executeRemoteCommand(target, `mkdir -p '${backupDir}'`);
+  await executeRemoteCommand(target, `mkdir -p ${shellEscape(backupDir)}`);
 
   let command: string;
 
   if (capabilities.hasWpCli) {
     const wpPath = capabilities.wpCliPath || "wp";
-    command = `cd '${wordpressPath}' && ${wpPath} db export '${backupPath}'`;
+    command = `cd ${shellEscape(wordpressPath)} && ${wpPath} db export ${shellEscape(backupPath)}`;
   } else if (capabilities.hasMariadbDump) {
-    command = `mariadb-dump -h ${target.database.host} -u ${target.database.user} -p'${target.database.password}' ${target.database.name} > '${backupPath}'`;
+    command = `mariadb-dump -h ${shellEscape(target.database.host)} -u ${shellEscape(target.database.user)} -p${shellEscape(target.database.password)} ${shellEscape(target.database.name)} > ${shellEscape(backupPath)}`;
   } else if (capabilities.hasMysqldump) {
-    command = `mysqldump -h ${target.database.host} -u ${target.database.user} -p'${target.database.password}' ${target.database.name} > '${backupPath}'`;
+    command = `mysqldump -h ${shellEscape(target.database.host)} -u ${shellEscape(target.database.user)} -p${shellEscape(target.database.password)} ${shellEscape(target.database.name)} > ${shellEscape(backupPath)}`;
   } else {
     throw new Error("バックアップを作成できるツールがありません");
   }
@@ -604,7 +612,7 @@ export async function listRemoteBackups(
     // find + stat で確実にファイル情報を取得（サーバー間の差異を吸収）
     const { stdout } = await executeRemoteCommand(
       target,
-      `find '${backupDir}' -maxdepth 1 -name '*.sql' -type f -exec stat --format='%n|%Y|%s' {} \\; 2>/dev/null || find '${backupDir}' -maxdepth 1 -name '*.sql' -type f -exec stat -f '%N|%m|%z' {} \\; 2>/dev/null || echo ""`
+      `find ${shellEscape(backupDir)} -maxdepth 1 -name '*.sql' -type f -exec stat --format='%n|%Y|%s' {} \\; 2>/dev/null || find ${shellEscape(backupDir)} -maxdepth 1 -name '*.sql' -type f -exec stat -f '%N|%m|%z' {} \\; 2>/dev/null || echo ""`
     );
 
     if (!stdout.trim()) {
@@ -673,7 +681,7 @@ export async function restoreRemoteBackup(
     logs.push(`\nバックアップファイルを確認: ${filename}`);
     const { stdout: checkResult } = await executeRemoteCommand(
       target,
-      `test -f '${backupPath}' && echo "exists" || echo "not found"`
+      `test -f ${shellEscape(backupPath)} && echo "exists" || echo "not found"`
     );
 
     if (checkResult.trim() !== "exists") {
@@ -686,9 +694,9 @@ export async function restoreRemoteBackup(
     let command: string;
     if (capabilities.hasWpCli) {
       const wpPath = capabilities.wpCliPath || "wp";
-      command = `cd '${wordpressPath}' && ${wpPath} db import '${backupPath}'`;
+      command = `cd ${shellEscape(wordpressPath)} && ${wpPath} db import ${shellEscape(backupPath)}`;
     } else {
-      command = `mysql -h ${target.database.host} -u ${target.database.user} -p'${target.database.password}' ${target.database.name} < '${backupPath}'`;
+      command = `mysql -h ${shellEscape(target.database.host)} -u ${shellEscape(target.database.user)} -p${shellEscape(target.database.password)} ${shellEscape(target.database.name)} < ${shellEscape(backupPath)}`;
     }
 
     await executeRemoteCommand(target, command, 300000);

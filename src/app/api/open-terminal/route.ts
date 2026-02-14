@@ -6,7 +6,7 @@ import { existsSync } from "fs";
 const execFileAsync = promisify(execFile);
 
 /**
- * POST /api/open-folder - ローカルフォルダをファイルマネージャーで開く
+ * POST /api/open-terminal - ローカルフォルダをターミナルで開く
  */
 export async function POST(request: NextRequest) {
   try {
@@ -32,21 +32,22 @@ export async function POST(request: NextRequest) {
     const platform = process.platform;
 
     if (platform === "darwin") {
-      // macOS
-      await execFileAsync("open", [path]);
+      // macOS - デフォルトのターミナルで開く
+      await execFileAsync("open", ["-a", "Terminal", path]);
     } else if (platform === "win32") {
-      // Windows
+      // Windows - explorerでフォルダを開き、ユーザーがcmdを起動する想定
+      // cmd.exeを直接開くのはセキュリティ上避ける
       await execFileAsync("explorer", [path]);
     } else {
-      // Linux
-      await execFileAsync("xdg-open", [path]);
+      // Linux - gnome-terminalを使用
+      await execFileAsync("gnome-terminal", ["--working-directory", path]);
     }
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error("Failed to open folder:", error);
+    console.error("Failed to open terminal:", error);
     return NextResponse.json(
-      { error: "フォルダを開けませんでした" },
+      { error: "ターミナルを開けませんでした" },
       { status: 500 }
     );
   }
