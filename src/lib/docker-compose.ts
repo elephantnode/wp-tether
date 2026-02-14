@@ -88,7 +88,9 @@ ${dbCommand ? `    command: '${dbCommand}'` : ""}
     image: wordpress:${wpTag}
     restart: always
 ${isLocalhostMode ? `    ports:
-      - "${port}:80"` : `    expose:
+      - "${port}:80"` : `    ports:
+      - "${port}:80"
+    expose:
       - 80`}
     volumes:
       - ./src:/var/www/html
