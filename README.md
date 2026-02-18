@@ -1,23 +1,63 @@
 # wp-tether
 
-WordPressローカル環境の管理ツール。Dockerを使用して複数のWordPressサイトを簡単に作成・管理できます。
+WordPressローカル開発環境管理ツール（Local by Flywheel / MAMP 代替）
+
+Dockerを使用して複数のWordPressサイトを簡単に作成・管理し、リモートサーバーとのファイル・DB同期も可能です。
+
+## ハンズオンで理解する
+
+**手を動かしてプロジェクトの仕組みを理解したい方向け**に、[docs/HANDSON.md](docs/HANDSON.md) にハンズオン形式の手順書を用意しています。
+
+- 開発環境の準備から、データ層・API・画面・Docker 生成まで章ごとに解説
+- 各技術の「なぜ必要か」と「何をしているか」を押さえられる
+- 既存プロジェクトで確認する手順と、ゼロから再現する場合の目安を記載
 
 ## 機能
 
-- **サイト管理** - 複数のWordPressローカル環境を作成・管理
-- **テンプレート** - よく使う構成をテンプレートとして共有
-- **バージョン選択** - WordPress / PHP / MySQL / MariaDB のバージョンを自由に選択
-- **Docker連携** - docker-compose.yml を自動生成
+### サイト管理
+- 複数のWordPressローカル環境を作成・管理
+- Docker Composeでワンクリック起動/停止
+- WordPress / PHP / MySQL / MariaDB のバージョンを自由に選択
+- テンプレートで構成を再利用
+
+### ホスト名 & SSL
+- カスタムホスト名（`mysite.test`）でアクセス
+- mkcert連携でブラウザ警告なしのHTTPS
+- Caddyによるリバースプロキシ
+
+### デプロイ・同期
+- **ファイル同期**: rsyncでテーマ・プラグイン・アップロードをPush/Pull
+- **DB同期**: WP-CLI / mysqldumpでデータベースをPush/Pull（URL自動置換）
+- 除外パターンのUI設定
+- リモートバックアップ管理
+
+### 外部公開
+- cloudflared / ngrok でローカルサイトを一時的に公開
+- QRコード表示でスマホ確認が簡単
+
+### その他
+- Mailpit統合（メールテスト）
+- WP-CLI + rsync/ssh対応コンテナ
+- プラグインプリセット（一括インストール）
+- 設定のエクスポート/インポート
 
 ## 技術スタック
 
 - Next.js 16 (App Router)
 - TypeScript
-- Tailwind CSS
-- shadcn/ui
-- Docker
+- Tailwind CSS + shadcn/ui
+- Docker Compose
 
 ## セットアップ
+
+### 前提条件
+
+- Node.js 20+
+- Docker Desktop
+- （推奨）mkcert - HTTPS証明書用
+- （オプション）cloudflared または ngrok - 外部公開用
+
+### インストール
 
 ```bash
 # 依存関係のインストール
@@ -29,94 +69,111 @@ npm run dev
 
 http://localhost:3000 にアクセス
 
-## ディレクトリ構成
-
-```
-wp-tether/
-├── data/                    # ローカルデータ（Git管理外）
-│   └── sites.json           # サイト情報
-├── templates/               # 環境テンプレート（Git共有）
-│   ├── default.yml          # MariaDB + PHP 8.2
-│   └── mysql8.yml           # MySQL 8.0 + PHP 8.2
-├── src/
-│   ├── app/
-│   │   ├── api/
-│   │   │   ├── docker/tags/ # Dockerバージョン取得API
-│   │   │   ├── sites/       # サイト管理API
-│   │   │   └── templates/   # テンプレート取得API
-│   │   ├── sites/new/       # 新規サイト作成ページ
-│   │   └── page.tsx         # ダッシュボード
-│   ├── components/
-│   │   ├── app-sidebar.tsx  # サイドバー
-│   │   └── site-card.tsx    # サイトカード
-│   ├── hooks/
-│   │   ├── use-docker-versions.ts
-│   │   └── use-templates.ts
-│   ├── lib/
-│   │   ├── docker-compose.ts # docker-compose.yml生成
-│   │   ├── docker-registry.ts # Docker Hub API
-│   │   └── sites.ts          # サイト管理
-│   └── types/
-│       └── index.ts          # 型定義
-└── ...
-```
-
-## サイト作成
-
-1. サイドバーの「新規サイト作成」をクリック
-2. サイト名、ホスト名、ローカルパスを入力（ポート番号はオプション）
-3. テンプレートを選択（詳細設定が自動入力）
-4. 必要に応じて詳細設定をカスタマイズ
-5. 「作成」をクリック
-
-**注意**: ポート番号は未指定でも自動生成されます（WordPressサイト識別用）。実際のWordPressへのアクセスはポート番号不要で `http://mysite.test` または `https://mysite.test` で可能です。
-
-### 生成されるファイル
-
-```
-~/wp-sites/my-blog/
-├── docker-compose.yml   # Docker構成
-├── .env                 # 環境変数
-├── Caddyfile            # Caddy設定
-├── certs/               # mkcert証明書（使用時）
-├── php/
-│   └── custom.ini       # PHPカスタム設定（起動時に読み込み）
-└── src/                 # WordPressファイル
-```
-
-### docker-compose.yml の構成
-
-| サービス | 説明 |
-|---------|------|
-| mariadb / mysql | データベース |
-| wordpress | WordPress本体 |
-| caddy | リバースプロキシ（標準ポート80/443でホスト名ベースルーティング） |
-| mailpit | メールテスト用（WebUI: port+1000, SMTP: port+2000） |
-
-## サイトの起動
+### mkcertのセットアップ（推奨）
 
 ```bash
-cd ~/wp-sites/my-blog
+brew install mkcert
+mkcert -install   # ローカルCAを信頼リストに追加（初回のみ）
+```
+
+## 使い方
+
+### 1. サイト作成
+
+1. サイドバーの「新規サイト作成」をクリック
+2. サイト名、ホスト名を入力
+3. ホスト名モードを選択:
+   - **カスタムホスト名**: `mysite.test` でアクセス（Caddy経由）
+   - **localhost**: `localhost:8080` でアクセス
+4. テンプレートを選択（詳細設定が自動入力）
+5. 「作成」をクリック
+
+### 2. サイト起動
+
+サイトカードの「起動」ボタンをクリック、または:
+
+```bash
+cd ~/wp-sites/mysite
 docker compose up -d
 ```
 
-`http://my-blog.test` でWordPressにアクセス（`/etc/hosts`にホスト名を追加する必要があります）
+### 3. WordPressにアクセス
 
-## PHP設定（php.ini）
+- カスタムホスト名モード: `https://mysite.test`
+- localhostモード: `http://localhost:8080`
 
-各サイトの `php/custom.ini` が起動時にコンテナ内の `/usr/local/etc/php/conf.d/zzz-custom.ini` として読み込まれます。メモリ・実行時間・タイムゾーン・文字コードなどをカスタマイズできます。
+**注意**: カスタムホスト名を使う場合、`/etc/hosts` に追加が必要:
+```
+127.0.0.1 mysite.test
+```
 
-- **memory_limit**: デフォルト 256M
-- **max_execution_time**: デフォルト 180
-- **upload_max_filesize** / **post_max_size**: デフォルト 64M
-- **date.timezone**: サイトのタイムゾーン（デフォルト Asia/Tokyo）
-- **ロケール**: コンテナの `LANG` / `LC_ALL` に `ja_JP.UTF-8` を設定（日本語環境）
+### 4. デプロイ（リモート同期）
 
-編集後は `docker compose restart wordpress` で反映されます。
+1. 「デプロイ」メニューでデプロイターゲットを設定
+2. SSH接続情報、リモートのWordPressパス、DB情報を入力
+3. 接続テストで確認
+4. ファイル同期・DB同期を実行
+
+### 5. 外部公開（トンネル）
+
+サイトカードの「公開」ボタンで一時的なURLを発行:
+- cloudflared: `xxx.trycloudflare.com`
+- ngrok: `xxx.ngrok-free.app`
+
+## 生成されるファイル
+
+```
+~/wp-sites/mysite/
+├── docker-compose.yml   # Docker構成
+├── .env                 # 環境変数
+├── Caddyfile            # Caddy設定（カスタムホスト名モード）
+├── certs/               # mkcert証明書
+├── php/
+│   └── custom.ini       # PHPカスタム設定
+├── docker/
+│   └── wpcli/           # WP-CLI Dockerfile
+└── src/                 # WordPressファイル
+```
+
+## Docker構成
+
+| サービス | 説明 | ポート |
+|---------|------|--------|
+| wordpress | WordPress本体 | port (例: 8080) |
+| mariadb / mysql | データベース | 3306 (内部) |
+| caddy | リバースプロキシ | 80, 443 |
+| mailpit | メールテスト | port+1000 |
+| wpcli | WP-CLI + rsync/ssh | - |
+
+## PHP設定
+
+`php/custom.ini` を編集してPHP設定をカスタマイズ:
+
+| 設定 | デフォルト |
+|------|-----------|
+| memory_limit | 300M |
+| max_execution_time | 180 |
+| upload_max_filesize | 64M |
+| post_max_size | 64M |
+| date.timezone | Asia/Tokyo |
+
+編集後: `docker compose restart wordpress`
+
+## Mailpit
+
+メールテスト用のMailpitが含まれています。
+
+- WebUI: `http://localhost:9080`（port+1000）
+- SMTP: `mailpit:1025`（コンテナ内）
+
+WordPressでWP Mail SMTPプラグインを設定:
+- Host: `mailpit`
+- Port: `1025`
+- 暗号化: なし
 
 ## テンプレート
 
-`templates/` ディレクトリにYAMLファイルを追加することで、独自のテンプレートを作成できます。
+`templates/` にYAMLファイルを追加して独自テンプレートを作成:
 
 ```yaml
 # templates/custom.yml
@@ -137,80 +194,7 @@ database:
   user: "wordpress"
   password: "wordpress"
   rootPassword: "somewordpress"
-
-exclude:
-  - ".git/"
-  - "node_modules/"
 ```
-
-## アクセス方法
-
-### カスタムホスト名でアクセス（推奨）
-
-ポート番号なしでアクセスできます：
-
-1. `/etc/hosts` に追加:
-   ```
-   127.0.0.1 my-blog.test
-   ```
-2. ブラウザでアクセス:
-   - HTTP: `http://my-blog.test`
-   - HTTPS: `https://my-blog.test`
-
-WordPressの設定で、サイトURLを `http://my-blog.test` または `https://my-blog.test` に設定してください。
-
-### SSL証明書（ブラウザの警告を出さないようにする）
-
-HTTPSでは、**mkcert** を使うとブラウザに「安全でない」と出ずに接続できます。
-
-- **mkcert をインストールしている場合**: サイト作成時に自動で証明書が発行され、Caddy がその証明書を利用します。`https://my-blog.test` でそのまま開けます。
-- **mkcert を入れていない場合**: Caddy の内部証明書（`tls internal`）が使われ、初回はブラウザで「詳細設定」→「続行」が必要です。
-
-mkcert のインストール（Mac）:
-
-```bash
-brew install mkcert
-mkcert -install   # ローカルCAを信頼リストに追加（初回のみ）
-```
-
-既に作成済みのサイトで後から mkcert を使う場合:
-
-```bash
-cd ~/wp-sites/my-blog/certs
-mkcert -cert-file cert.pem -key-file key.pem my-blog.test localhost 127.0.0.1
-```
-
-その後、Caddyfile の `tls internal` を `tls /etc/caddy/certs/cert.pem /etc/caddy/certs/key.pem` に書き換え、`docker compose restart caddy` で再起動してください。
-
-### ポート構成
-
-| サービス | ポート | 説明 |
-|---------|--------|------|
-| Caddy HTTP | 80 | 標準HTTPポート（全サイト共通） |
-| Caddy HTTPS | 443 | 標準HTTPSポート（全サイト共通） |
-| WordPress識別用 | port (例: 8080) | サイト識別用（実際のアクセスはポート番号不要） |
-| Mailpit WebUI | port+1000 (例: 9080) | http://localhost:9080 |
-| Mailpit SMTP | 1025 | コンテナ内からのみ |
-
-**注意**: 複数のサイトを管理する場合、各サイトは異なるホスト名を使用してください（例: `site1.test`, `site2.test`）。Caddyがホスト名に基づいて適切なWordPressコンテナにルーティングします。
-
-## Mailpit
-
-メールテスト用にMailpitが含まれています。
-
-WordPressからメールを送信するには、WP Mail SMTPプラグインで以下を設定：
-
-- SMTP Host: `mailpit`
-- SMTP Port: `1025`
-- 暗号化: なし
-- 認証: なし
-
-## 今後の予定
-
-- [ ] Docker起動/停止機能
-- [ ] デプロイ機能（Wordmove代替）
-- [ ] 外部公開（ngrok/Cloudflare Tunnel）
-- [ ] サイト削除機能
 
 ## ライセンス
 

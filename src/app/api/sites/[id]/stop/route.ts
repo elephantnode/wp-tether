@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { exec } from "child_process";
+import { execFile } from "child_process";
 import { promisify } from "util";
 import { getSite, updateSite } from "@/lib/sites";
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 interface Params {
   params: Promise<{ id: string }>;
@@ -24,8 +24,7 @@ export async function POST(request: NextRequest, { params }: Params) {
       );
     }
 
-    // docker compose down を実行
-    await execAsync("docker compose down", {
+    await execFileAsync("docker", ["compose", "down"], {
       cwd: site.path,
     });
 

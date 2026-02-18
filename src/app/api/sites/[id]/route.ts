@@ -1,10 +1,50 @@
 import { NextRequest, NextResponse } from "next/server";
-import { exec } from "child_process";
+import { execFile } from "child_process";
 import { promisify } from "util";
 import fs from "fs/promises";
+import path from "path";
+import os from "os";
 import { getSite, deleteSite } from "@/lib/sites";
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
+
+/** 削除してよいサイトディレクトリか検証（システムパス・他サイト・プロジェクト本体を誤削除しないため） */
+async function isSafeToDeleteSitePath(sitePath: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  const normalized = path.normalize(sitePath);
+  const projectRoot = process.cwd();
+  const dataDir = path.join(projectRoot, "data");
+  const home = os.homedir();
+
+  const forbidden = [
+    "/",
+    "/.",
+    "/usr",
+    "/etc",
+    "/var",
+    "/System",
+    "/bin",
+    "/sbin",
+    "/opt",
+    projectRoot,
+    dataDir,
+  ];
+  const resolved = path.resolve(normalized);
+  for (const p of forbidden) {
+    const r = path.resolve(p);
+    if (resolved === r || resolved.startsWith(r + path.sep)) {
+      return { ok: false, error: "このパスは削除できません（システムまたはプロジェクトの重要パスです）" };
+    }
+  }
+  if (!resolved.startsWith(home)) {
+    return { ok: false, error: "削除できるのはホームディレクトリ以下のサイトのみです" };
+  }
+  try {
+    await fs.access(path.join(resolved, "docker-compose.yml"));
+  } catch {
+    return { ok: false, error: "サイトディレクトリに docker-compose.yml がありません。誤ったパスを指定していないか確認してください" };
+  }
+  return { ok: true };
+}
 
 interface Params {
   params: Promise<{ id: string }>;
@@ -35,10 +75,10 @@ export async function DELETE(request: NextRequest, { params }: Params) {
     // docker compose down -v は、そのプロジェクトのdocker-compose.ymlで定義されている
     // ボリュームのみを削除するため、他のプロジェクトのボリュームには影響しません
     try {
-      const command = deleteVolumes 
-        ? "docker compose down -v" 
-        : "docker compose down";
-      await execAsync(command, {
+      const args = deleteVolumes
+        ? ["compose", "down", "-v"]
+        : ["compose", "down"];
+      await execFileAsync("docker", args, {
         cwd: site.path,
       });
     } catch {
@@ -52,9 +92,11 @@ export async function DELETE(request: NextRequest, { params }: Params) {
       try {
         // docker compose config --volumes で、そのプロジェクトで定義されているボリューム名を取得
         // このコマンドは、docker-compose.ymlファイルが存在する場合のみ動作します
-        const { stdout: volumesOutput } = await execAsync("docker compose config --volumes", {
-          cwd: site.path,
-        }).catch(() => ({ stdout: "" }));
+        const { stdout: volumesOutput } = await execFileAsync(
+          "docker",
+          ["compose", "config", "--volumes"],
+          { cwd: site.path }
+        ).catch(() => ({ stdout: "" }));
 
         if (volumesOutput && volumesOutput.trim()) {
           // プロジェクト名を取得（.envファイルから、またはディレクトリ名から推測）
@@ -91,7 +133,7 @@ export async function DELETE(request: NextRequest, { params }: Params) {
           for (const volumeName of volumeNames) {
             const fullVolumeName = `${normalizedProjectName}_${volumeName}`;
             try {
-              await execAsync(`docker volume rm ${fullVolumeName}`);
+              await execFileAsync("docker", ["volume", "rm", fullVolumeName]);
             } catch {
               // ボリュームが存在しない、または使用中で削除できない場合は無視
               // docker compose down -v が成功していれば、ボリュームは既に削除されています
@@ -104,8 +146,11 @@ export async function DELETE(request: NextRequest, { params }: Params) {
       }
     }
 
-    // ファイル削除オプション
     if (deleteFiles) {
+      const safe = await isSafeToDeleteSitePath(site.path);
+      if (!safe.ok) {
+        return NextResponse.json({ error: safe.error }, { status: 400 });
+      }
       await fs.rm(site.path, { recursive: true, force: true });
     }
 

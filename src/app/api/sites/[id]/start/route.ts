@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { exec } from "child_process";
+import { execFile } from "child_process";
 import { promisify } from "util";
 import fs from "fs/promises";
 import path from "path";
 import { getSite, updateSite } from "@/lib/sites";
 import { generatePhpIni } from "@/lib/docker-compose";
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 interface Params {
   params: Promise<{ id: string }>;
@@ -42,8 +42,7 @@ export async function POST(request: NextRequest, { params }: Params) {
       await fs.writeFile(customIniPath, phpIni);
     }
 
-    // docker compose up -d を実行
-    await execAsync("docker compose up -d", {
+    await execFileAsync("docker", ["compose", "up", "-d"], {
       cwd: site.path,
     });
 
