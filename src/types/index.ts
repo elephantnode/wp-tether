@@ -194,3 +194,180 @@ export interface Tunnel {
   publicUrl?: string;
   status: "connecting" | "connected" | "disconnected" | "error";
 }
+
+// ===========================================
+// セキュリティスキャン
+// ===========================================
+
+export interface SecurityVersionInfo {
+  /** WordPress コアバージョン（取得失敗時は undefined） */
+  wordpress?: string;
+  /** PHP バージョン（実行時、取得失敗時は undefined） */
+  php?: string;
+  /** プラグイン一覧（name, version, status） */
+  plugins: { name: string; version: string; status: "active" | "inactive" }[];
+  /** テーマ一覧（name, version, status） */
+  themes: { name: string; version: string; status: "active" | "inactive" }[];
+}
+
+export interface SecurityFileScanIssue {
+  path: string; // サイトルートからの相対パス
+  line?: number;
+  pattern: string; // 検出したパターン名
+  snippet?: string; // 該当行の抜粋（最大100文字程度）
+}
+
+export interface SecurityFileScanResult {
+  scannedDirs: string[];
+  filesScanned: number;
+  issues: SecurityFileScanIssue[];
+}
+
+export interface SecurityRecommendation {
+  id: string;
+  level: "warning" | "info";
+  title: string;
+  message: string;
+  /** 対応例（例: プラグイン名のリスト） */
+  detail?: string[];
+}
+
+/** WPVulnerability で検出した1件の脆弱性（表示用） */
+export interface SecurityVulnerabilityItem {
+  /** 脆弱性の概要（例: CVE-2024-1234） */
+  name: string;
+  /** 詳細説明（短い一文） */
+  description?: string;
+  /** 情報元リンク */
+  link?: string;
+  /** CVSS 深刻度 (critical, high, medium, low など) */
+  severity?: string;
+  /** 影響バージョン範囲の説明（例: "&lt; 3.1.5"） */
+  affectedVersion?: string;
+}
+
+/** 1製品（コア/プラグイン/テーマ）の脆弱性チェック結果 */
+export interface SecurityVulnerabilityCheck {
+  type: "core" | "plugin" | "theme";
+  name: string; // 表示名（プラグイン/テーマ名または "WordPress"）
+  slug?: string; // プラグイン/テーマのスラッグ
+  installedVersion: string;
+  vulnerabilities: SecurityVulnerabilityItem[];
+}
+
+export interface SecurityScanResult {
+  scannedAt: string; // ISO 8601
+  version: SecurityVersionInfo;
+  fileScan: SecurityFileScanResult;
+  recommendations: SecurityRecommendation[];
+  /** バージョン取得がスキップされた理由（サイト停止中など） */
+  versionSkippedReason?: string;
+  /** WPVulnerability API による脆弱性チェック結果（取得失敗時は空配列） */
+  vulnerabilityChecks: SecurityVulnerabilityCheck[];
+  /** npm audit 結果（package.json があるディレクトリのみ。キャッシュ互換のため省略可） */
+  npmAudit?: SecurityNpmAuditResult[];
+  /** HTTPセキュリティヘッダのチェック結果 */
+  securityHeaders?: SecurityHeadersResult;
+  /** WordPress露出チェック結果 */
+  exposureChecks?: SecurityExposureResult;
+  /** wp-config.php 設定チェック結果 */
+  wpConfigChecks?: SecurityWpConfigResult;
+}
+
+/** npm audit の1プロジェクト分の結果 */
+export interface SecurityNpmAuditResult {
+  /** サイトの wp-content からの相対パス（例: plugins/my-plugin, themes/my-theme） */
+  projectPath: string;
+  /** 実行エラー時はメッセージ（脆弱性カウントは 0） */
+  error?: string;
+  /** 深刻度別件数 */
+  vulnerabilities: {
+    critical: number;
+    high: number;
+    moderate: number;
+    low: number;
+    info: number;
+  };
+}
+
+// ===========================================
+// セキュリティヘッダ・WordPress設定チェック
+// ===========================================
+
+/** HTTPセキュリティヘッダのチェック結果 */
+export interface SecurityHeaderCheck {
+  /** ヘッダ名 */
+  name: string;
+  /** 検出された値（未設定の場合は undefined） */
+  value?: string;
+  /** ヘッダが設定されているか */
+  present: boolean;
+  /** 推奨される設定 */
+  recommended: string;
+  /** 説明 */
+  description: string;
+}
+
+/** HTTPセキュリティヘッダの総合結果 */
+export interface SecurityHeadersResult {
+  /** チェックが実行されたか（サイト停止中は false） */
+  checked: boolean;
+  /** 未実行理由 */
+  skippedReason?: string;
+  /** 各ヘッダのチェック結果 */
+  headers: SecurityHeaderCheck[];
+}
+
+/** WordPress露出チェックの1項目 */
+export interface SecurityExposureItem {
+  /** チェック項目ID */
+  id: string;
+  /** 項目名 */
+  name: string;
+  /** チェックしたURL/パス */
+  path: string;
+  /** 露出しているか（true = リスクあり） */
+  exposed: boolean;
+  /** 取得した情報（バージョン、ユーザー名など） */
+  detail?: string;
+  /** リスク説明 */
+  risk: string;
+  /** 対策 */
+  mitigation: string;
+}
+
+/** WordPress露出チェックの総合結果 */
+export interface SecurityExposureResult {
+  /** チェックが実行されたか */
+  checked: boolean;
+  /** 未実行理由 */
+  skippedReason?: string;
+  /** 各項目のチェック結果 */
+  items: SecurityExposureItem[];
+}
+
+/** wp-config.php のセキュリティ設定チェック */
+export interface SecurityWpConfigCheck {
+  /** チェック項目ID */
+  id: string;
+  /** 項目名 */
+  name: string;
+  /** 現在の設定値 */
+  currentValue?: string;
+  /** 推奨値 */
+  recommendedValue: string;
+  /** 問題があるか */
+  hasIssue: boolean;
+  /** 説明 */
+  description: string;
+}
+
+/** wp-config.php チェック結果 */
+export interface SecurityWpConfigResult {
+  /** チェックが実行されたか */
+  checked: boolean;
+  /** 未実行理由 */
+  skippedReason?: string;
+  /** 各設定のチェック結果 */
+  items: SecurityWpConfigCheck[];
+}
