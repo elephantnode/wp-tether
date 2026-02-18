@@ -5,7 +5,7 @@ import { randomUUID } from "crypto";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import { Site, SiteConfig } from "@/types";
-import { getSites, addSite, updateSite, expandPath } from "@/lib/sites";
+import { getSites, getSitesWithActualStatus, addSite, updateSite, expandPath } from "@/lib/sites";
 import { generateDockerCompose, generateEnvFile, generateCaddyfile, generatePhpIni, generateWpcliDockerfile } from "@/lib/docker-compose";
 
 const execFileAsync = promisify(execFile);
@@ -94,11 +94,11 @@ async function isWordPressInstalled(sitePath: string): Promise<boolean> {
 }
 
 /**
- * GET /api/sites - サイト一覧を取得
+ * GET /api/sites - サイト一覧を取得（実際のコンテナ状態を反映）
  */
 export async function GET() {
   try {
-    const sites = await getSites();
+    const sites = await getSitesWithActualStatus();
     return NextResponse.json({ sites });
   } catch (error) {
     console.error("Failed to get sites:", error);

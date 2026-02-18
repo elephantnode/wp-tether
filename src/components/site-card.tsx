@@ -25,6 +25,12 @@ import {
 } from "@/components/ui/alert-dialog";
 import { DbRestoreDialog } from "@/components/db-restore-dialog";
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   ExternalLink,
   Play,
   Square,
@@ -44,6 +50,9 @@ import {
   Key,
   Settings,
   Package,
+  Share2,
+  X,
+  QrCode,
 } from "lucide-react";
 
 interface SiteCardProps {
@@ -79,6 +88,11 @@ export function SiteCard({ site }: SiteCardProps) {
   const [copiedPath, setCopiedPath] = useState(false);
   const [isInstallingPlugins, setIsInstallingPlugins] = useState(false);
   const [pluginResult, setPluginResult] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [tunnelUrl, setTunnelUrl] = useState<string | null>(null);
+  const [tunnelProvider, setTunnelProvider] = useState<string | null>(null);
+  const [isTunneling, setIsTunneling] = useState(false);
+  const [showTunnelDialog, setShowTunnelDialog] = useState(false);
+  const [tunnelError, setTunnelError] = useState<string | null>(null);
 
   const isRunning = site.status === "running";
 
@@ -164,6 +178,22 @@ export function SiteCard({ site }: SiteCardProps) {
       }
     } catch {
       setError("フォルダを開けませんでした");
+    }
+  }
+
+  async function openTerminal() {
+    try {
+      const res = await fetch("/api/open-terminal", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: site.path }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        setError(data.error || "ターミナルを開けませんでした");
+      }
+    } catch {
+      setError("ターミナルを開けませんでした");
     }
   }
 
@@ -266,6 +296,61 @@ export function SiteCard({ site }: SiteCardProps) {
     }
   }
 
+  async function handleStartTunnel() {
+    setIsTunneling(true);
+    setTunnelError(null);
+
+    try {
+      const res = await fetch(`/api/sites/${site.id}/tunnel`, {
+        method: "POST",
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || "トンネルの開始に失敗しました");
+      }
+
+      if (data.tunnel?.publicUrl) {
+        setTunnelUrl(data.tunnel.publicUrl);
+        setTunnelProvider(data.tunnel.provider || null);
+        setShowTunnelDialog(true);
+      }
+    } catch (err) {
+      setTunnelError(err instanceof Error ? err.message : "エラーが発生しました");
+    } finally {
+      setIsTunneling(false);
+    }
+  }
+
+  async function handleStopTunnel() {
+    try {
+      await fetch(`/api/sites/${site.id}/tunnel`, {
+        method: "DELETE",
+      });
+      setTunnelUrl(null);
+      setTunnelProvider(null);
+      setShowTunnelDialog(false);
+    } catch {
+      // エラーは無視
+    }
+  }
+
+  async function copyTunnelUrl() {
+    if (!tunnelUrl) return;
+    try {
+      await navigator.clipboard.writeText(tunnelUrl);
+    } catch {
+      // フォールバック
+      const textarea = document.createElement("textarea");
+      textarea.value = tunnelUrl;
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand("copy");
+      document.body.removeChild(textarea);
+    }
+  }
+
   return (
     <Card>
       <CardHeader className="pb-2">
@@ -354,6 +439,13 @@ export function SiteCard({ site }: SiteCardProps) {
             ) : (
               <Copy className="w-3 h-3" />
             )}
+          </button>
+          <button
+            onClick={openTerminal}
+            className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-muted rounded"
+            title="ターミナルで開く"
+          >
+            <Terminal className="w-3 h-3" />
           </button>
           <button
             onClick={openFolder}
@@ -507,6 +599,33 @@ export function SiteCard({ site }: SiteCardProps) {
               )}
               {isInstallingPlugins ? "インストール中..." : "プラグイン"}
             </Button>
+            {tunnelUrl ? (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setShowTunnelDialog(true)}
+                className="text-green-600"
+                title="公開URL・QRコードを表示"
+              >
+                <QrCode className="w-4 h-4 mr-1" />
+                公開中
+              </Button>
+            ) : (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleStartTunnel}
+                disabled={isTunneling}
+                title="一時的な公開URLを作成（Cloudflare Tunnel）"
+              >
+                {isTunneling ? (
+                  <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+                ) : (
+                  <Share2 className="w-4 h-4 mr-1" />
+                )}
+                {isTunneling ? "接続中..." : "公開"}
+              </Button>
+            )}
             <DbRestoreDialog
               siteId={site.id}
               siteName={site.name}
@@ -630,6 +749,86 @@ export function SiteCard({ site }: SiteCardProps) {
           </>
         )}
       </CardFooter>
+
+      {/* トンネルダイアログ */}
+      <Dialog open={showTunnelDialog} onOpenChange={setShowTunnelDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Share2 className="w-5 h-5" />
+              公開URL - {site.name}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            {tunnelUrl && (
+              <>
+                {/* QRコード */}
+                <div className="flex justify-center p-4 bg-white rounded-lg">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={`/api/qrcode?url=${encodeURIComponent(tunnelUrl)}`}
+                    alt="QR Code"
+                    className="w-48 h-48"
+                  />
+                </div>
+
+                {/* URL */}
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={tunnelUrl}
+                    readOnly
+                    className="flex-1 px-3 py-2 text-sm bg-muted rounded-md font-mono"
+                  />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={copyTunnelUrl}
+                    title="URLをコピー"
+                  >
+                    <Copy className="w-4 h-4" />
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    asChild
+                  >
+                    <a href={tunnelUrl} target="_blank" rel="noopener noreferrer">
+                      <ExternalLink className="w-4 h-4" />
+                    </a>
+                  </Button>
+                </div>
+
+                <div className="text-xs text-muted-foreground text-center space-y-1">
+                  {tunnelProvider && (
+                    <p className="font-medium">
+                      Provider: {tunnelProvider === "cloudflared" ? "Cloudflare Tunnel" : "ngrok"}
+                    </p>
+                  )}
+                  <p>このURLはセッション中のみ有効です。ブラウザを閉じると無効になります。</p>
+                </div>
+
+                {/* 停止ボタン */}
+                <Button
+                  variant="outline"
+                  onClick={handleStopTunnel}
+                  className="w-full text-destructive"
+                >
+                  <X className="w-4 h-4 mr-2" />
+                  公開を停止
+                </Button>
+              </>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* トンネルエラー表示 */}
+      {tunnelError && (
+        <div className="px-4 pb-4">
+          <p className="text-xs text-destructive">{tunnelError}</p>
+        </div>
+      )}
     </Card>
   );
 }

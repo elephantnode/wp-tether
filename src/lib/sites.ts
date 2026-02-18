@@ -1,7 +1,11 @@
 import fs from "fs/promises";
 import path from "path";
 import os from "os";
+import { execFile } from "child_process";
+import { promisify } from "util";
 import { Site } from "@/types";
+
+const execFileAsync = promisify(execFile);
 
 const DATA_DIR = path.join(process.cwd(), "data");
 const SITES_FILE = path.join(DATA_DIR, "sites.json");
@@ -84,4 +88,78 @@ export async function deleteSite(id: string): Promise<boolean> {
 
   await saveSites(filtered);
   return true;
+}
+
+/**
+ * サイトのDockerコンテナの実際の稼働状態を取得
+ * WordPressコンテナ（wordpress）が running かどうかで判定
+ */
+async function getActualContainerStatus(
+  sitePath: string
+): Promise<"running" | "stopped" | "error"> {
+  try {
+    // docker compose ps でコンテナの状態を確認
+    const { stdout } = await execFileAsync(
+      "docker",
+      ["compose", "ps", "--format", "json"],
+      { cwd: sitePath, timeout: 10000 }
+    );
+
+    if (!stdout.trim()) {
+      return "stopped";
+    }
+
+    // 各行がJSONオブジェクト（Docker Compose v2の出力形式）
+    const lines = stdout.trim().split("\n");
+    for (const line of lines) {
+      try {
+        const container = JSON.parse(line);
+        // wordpressコンテナの状態をチェック
+        if (
+          container.Service === "wordpress" ||
+          container.Name?.includes("wordpress")
+        ) {
+          if (container.State === "running") {
+            return "running";
+          }
+        }
+      } catch {
+        // JSON解析エラーは無視
+      }
+    }
+
+    return "stopped";
+  } catch {
+    // docker compose psが失敗した場合（ディレクトリが存在しない等）
+    return "stopped";
+  }
+}
+
+/**
+ * サイト一覧を実際のコンテナ状態と共に取得
+ * 設定ファイルのstatusと実際のコンテナ状態が異なる場合は実際の状態を反映
+ */
+export async function getSitesWithActualStatus(): Promise<Site[]> {
+  const sites = await getSites();
+
+  // 並列でコンテナ状態をチェック
+  const sitesWithStatus = await Promise.all(
+    sites.map(async (site) => {
+      // creating/error状態のサイトはそのまま（セットアップ中の可能性）
+      if (site.status === "creating" || site.status === "error") {
+        return site;
+      }
+
+      const actualStatus = await getActualContainerStatus(site.path);
+
+      // 実際の状態と異なる場合は更新
+      if (site.status !== actualStatus) {
+        return { ...site, status: actualStatus };
+      }
+
+      return site;
+    })
+  );
+
+  return sitesWithStatus;
 }

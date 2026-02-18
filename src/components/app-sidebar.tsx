@@ -20,6 +20,7 @@ import {
   Settings,
   Plus,
   Container,
+  HelpCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -43,6 +44,11 @@ const navItems = [
     title: "設定",
     href: "/settings",
     icon: Settings,
+  },
+  {
+    title: "使い方",
+    href: "/help",
+    icon: HelpCircle,
   },
 ];
 
