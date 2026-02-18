@@ -27,7 +27,8 @@ AIに任せきりにせず、各技術の「なぜ」と「何をしているか
 | [step-03-site-creation.md](step-03-site-creation.md) | **Step 3**：新規サイト作成フォーム、POST API、Docker 用ファイル生成 |
 | [step-04-start-stop.md](step-04-start-stop.md) | **Step 4**：起動・停止 API、実際のコンテナ状態の反映 |
 | [step-05-templates-and-delete.md](step-05-templates-and-delete.md) | **Step 5**：テンプレート YAML、サイト削除 |
-| （Step 6 以降） | 順次、別ファイルで追加します。 |
+| [step-06-deploy.md](step-06-deploy.md) | **Step 6**：デプロイターゲット、ファイル同期 API |
+| [step-07-other.md](step-07-other.md) | **Step 7**：コンテナ一覧・ログ、QR コード、トンネル、設定のエクスポート |
 
 **全体の道のり**
 
