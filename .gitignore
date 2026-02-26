@@ -37,6 +37,9 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
+# Claude Code ローカル設定（認証情報を含む可能性）
+.claude/settings.local.json
+
 # ===========================================
 # wp-tether
 # ===========================================
