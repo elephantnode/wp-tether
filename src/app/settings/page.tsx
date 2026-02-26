@@ -22,7 +22,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Loader2, Save, Package, Download, Upload, Database, Globe, Trash2, ChevronDown } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Loader2, Save, Package, Download, Upload, Database, Globe, Trash2, ChevronDown, FolderOpen } from "lucide-react";
 
 export default function SettingsPage() {
   const [plugins, setPlugins] = useState("");
@@ -41,15 +42,62 @@ export default function SettingsPage() {
   // クリーンアップ用state
   const [isCleaning, setIsCleaning] = useState(false);
 
+  // アプリ設定（データパス）
+  const [sitesJsonPath, setSitesJsonPath] = useState("");
+  const [resolvedPath, setResolvedPath] = useState("");
+  const [isSavingPath, setIsSavingPath] = useState(false);
+  const [pathMessage, setPathMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
   // 展開状態
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
+    appConfig: false,
     data: false,
     plugins: false,
   });
 
   useEffect(() => {
     fetchPresets();
+    fetchAppConfig();
   }, []);
+
+  async function fetchAppConfig() {
+    try {
+      const res = await fetch("/api/app-config");
+      if (res.ok) {
+        const data = await res.json();
+        setSitesJsonPath(data.sitesJsonPath ?? "");
+        setResolvedPath(data.resolvedSitesJsonPath ?? "");
+      }
+    } catch (error) {
+      console.error("Failed to fetch app config:", error);
+    }
+  }
+
+  async function handleSavePath() {
+    setIsSavingPath(true);
+    setPathMessage(null);
+    try {
+      const res = await fetch("/api/app-config", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sitesJsonPath }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "保存に失敗しました");
+      setSitesJsonPath(data.sitesJsonPath ?? "");
+      // GET で解決済みパスを再取得
+      const getRes = await fetch("/api/app-config");
+      if (getRes.ok) {
+        const getData = await getRes.json();
+        setResolvedPath(getData.resolvedSitesJsonPath ?? "");
+      }
+      setPathMessage({ type: "success", text: "保存しました" });
+    } catch (error) {
+      setPathMessage({ type: "error", text: error instanceof Error ? error.message : "保存に失敗しました" });
+    } finally {
+      setIsSavingPath(false);
+    }
+  }
 
   async function fetchPresets() {
     try {
@@ -197,6 +245,81 @@ export default function SettingsPage() {
   return (
     <div className="space-y-4">
       <h1 className="text-2xl font-bold">設定</h1>
+
+      {/* データパス設定 */}
+      <Collapsible open={openSections.appConfig} onOpenChange={() => toggleSection("appConfig")}>
+        <Card>
+          <CollapsibleTrigger asChild>
+            <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <FolderOpen className="w-5 h-5" />
+                  <div>
+                    <CardTitle className="text-base">データパス設定</CardTitle>
+                    <CardDescription className="mt-1">
+                      sites.json の保存場所を変更して複数のwp-tetherインスタンス間で設定を共有
+                    </CardDescription>
+                  </div>
+                </div>
+                <ChevronDown
+                  className={`w-5 h-5 text-muted-foreground transition-transform ${
+                    openSections.appConfig ? "rotate-180" : ""
+                  }`}
+                />
+              </div>
+            </CardHeader>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <CardContent className="space-y-4 pt-0">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">sites.json のパス</label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    placeholder="空欄 = デフォルト (data/sites.json)"
+                    value={sitesJsonPath}
+                    onChange={(e) => setSitesJsonPath(e.target.value)}
+                    className="font-mono text-sm"
+                  />
+                  <Button onClick={handleSavePath} disabled={isSavingPath} size="sm">
+                    {isSavingPath ? (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    ) : (
+                      <Save className="w-4 h-4 mr-2" />
+                    )}
+                    保存
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  現在の有効パス:{" "}
+                  <code className="bg-muted px-1 rounded">{resolvedPath || "（取得中）"}</code>
+                </p>
+              </div>
+
+              {pathMessage && (
+                <div
+                  className={`p-3 rounded-md text-sm ${
+                    pathMessage.type === "success"
+                      ? "bg-green-50 dark:bg-green-950/30 text-green-800 dark:text-green-200"
+                      : "bg-red-50 dark:bg-red-950/30 text-red-800 dark:text-red-200"
+                  }`}
+                >
+                  {pathMessage.text}
+                </div>
+              )}
+
+              <div className="text-sm text-muted-foreground space-y-1">
+                <p className="font-medium">使い方:</p>
+                <ul className="list-disc list-inside space-y-1">
+                  <li>空欄にするとデフォルト（<code className="bg-muted px-1 rounded">data/sites.json</code>）を使用</li>
+                  <li>絶対パスまたは <code className="bg-muted px-1 rounded">~/...</code> 形式で指定</li>
+                  <li>例: <code className="bg-muted px-1 rounded">~/Dropbox/wp-tether/sites.json</code></li>
+                  <li>指定先のファイルが存在しない場合は自動作成されます</li>
+                </ul>
+              </div>
+            </CardContent>
+          </CollapsibleContent>
+        </Card>
+      </Collapsible>
 
       {/* データエクスポート/インポート */}
       <Collapsible open={openSections.data} onOpenChange={() => toggleSection("data")}>

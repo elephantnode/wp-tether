@@ -251,26 +251,22 @@ export function useTemplates() {
 
 ## 5-4. 新規サイト作成フォームでテンプレートを反映する
 
-**何をするか**  
-新規サイト作成ページ（`/sites/new`）で、テンプレートを選択するセレクトを表示し、**選択が変わったときに** `getTemplate(id)` で取得した値でフォームの `wpVersion` / `phpVersion` / `dbType` / `dbVersion` を更新する。
+**何をするか**
+新規サイト作成ページ（`/sites/new`）で、テンプレートを選択する shadcn/ui `Select` を表示し、**選択が変わったときに** `getTemplate(id)` で取得した値でフォームの `wpVersion` / `phpVersion` / `dbType` / `dbVersion` を更新する。
 
 **手順**
 
 `src/app/sites/new/page.tsx` を開き、次のように変更する。
 
-0. **`template` をフォーム定義に追加しておく（重要）**
+0. **`template` をフォーム定義に追加する**
 
-Zod スキーマと `defaultValues` に `template` が無いと、選択状態が保持されず「選ぶと消える」挙動になりやすい。
-
-- Zod（例）
+Zod スキーマと `defaultValues` に `template` を追加する。
 
 ```typescript
+// formSchema に追加
 template: z.string().min(1, "テンプレートを選択してください"),
-```
 
-- defaultValues（例）
-
-```typescript
+// defaultValues に追加
 template: "default",
 ```
 
@@ -279,61 +275,108 @@ template: "default",
 ```typescript
 import { useTemplates } from "@/hooks/use-templates";
 
-// コンポーネント内
+// コンポーネント内（useDockerVersions と並べて記述）
+const { versions, isLoading: isLoadingVersions } = useDockerVersions();
 const { templates, isLoading: isLoadingTemplates, getTemplate } = useTemplates();
+
+const isLoading = isLoadingVersions || isLoadingTemplates;
 ```
 
-2. **テンプレート選択時にフォームを更新するハンドラを追加（reset ではなく setValue）**
+2. **テンプレート選択時にフォームを更新するハンドラを追加**
 
-テンプレート変更で `form.reset()` を使うと、フォーム全体がリセットされて **template の選択自体が戻る**ことがある。ここでは **必要な項目だけ**を `setValue()` で更新する。
+`form.reset({ ...currentValues, ...テンプレートの値 })` で、現在のフォーム入力（サイト名・パス・管理者情報など）を保持しながらバージョン部分だけ上書きする。
+
+また、テンプレートの `dbVersion` が `useDockerVersions` で取得したバージョンリストに含まれない場合は、リストの先頭に補正する。
 
 ```typescript
 function handleTemplateChange(templateId: string) {
   const template = getTemplate(templateId);
   if (template) {
-    form.setValue("wpVersion", template.wordpress.version, { shouldValidate: false });
-    form.setValue("phpVersion", template.php.version, { shouldValidate: false });
-    form.setValue("dbType", template.database.type, { shouldValidate: false });
-    form.setValue("dbVersion", template.database.version, { shouldValidate: false });
+    const currentValues = form.getValues();
+    const newDbType = template.database.type;
+    const newDbVersions =
+      newDbType === "mysql" ? versions.mysql : versions.mariadb;
+
+    // テンプレートの dbVersion がバージョンリストに無ければ先頭に補正
+    let dbVersion = template.database.version;
+    if (currentValues.dbType !== newDbType) {
+      if (!newDbVersions.includes(dbVersion) && newDbVersions.length > 0) {
+        dbVersion = newDbVersions[0];
+      }
+    }
+
+    form.reset({
+      ...currentValues,
+      wpVersion: template.wordpress.version,
+      phpVersion: template.php.version,
+      dbType: newDbType,
+      dbVersion,
+    });
   }
 }
 ```
 
-3. **フォームに「テンプレート」のセレクトを追加（register の onChange を潰さない）**
+3. **「基本設定」カードにテンプレートの `FormField` を追加する**
 
-既存のフォーム項目の前（例：サイト名の前）に、次のようなブロックを追加する。  \n+`form.register("template")` が返す `onChange` をそのまま使わないと、React Hook Form 側の状態更新が走らず、選択が保持されないことがある。  \n+そのため、`templateRegister.onChange(e)` を先に呼んでから `handleTemplateChange()` を呼ぶ。
+Step 3 で作った「基本設定」カード（`<Card>`）の中、サイト名フィールドの直前に追加する。
 
 ```tsx
-<div>
-  <label className="block text-sm font-medium text-gray-700">テンプレート</label>
-  {(() => {
-    const templateRegister = form.register("template");
-    return (
-      <select
-        {...templateRegister}
-        onChange={(e) => {
-          templateRegister.onChange(e);
-          handleTemplateChange(e.target.value);
+<FormField
+  control={form.control}
+  name="template"
+  render={({ field }) => (
+    <FormItem>
+      <FormLabel className="flex items-center gap-2">
+        テンプレート
+        {isLoadingTemplates && (
+          <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" />
+        )}
+      </FormLabel>
+      <Select
+        onValueChange={(value) => {
+          field.onChange(value);
+          handleTemplateChange(value);
         }}
-        className="mt-1 block w-full rounded border border-gray-300 px-3 py-2"
+        value={field.value}
       >
-    {templates.map((t) => (
-      <option key={t.id} value={t.id}>
-        {t.name} — {t.description}
-      </option>
-    ))}
-      </select>
-    );
-  })()}
-</div>
+        <FormControl>
+          <SelectTrigger>
+            <SelectValue placeholder="テンプレートを選択" />
+          </SelectTrigger>
+        </FormControl>
+        <SelectContent>
+          {templates.map((t) => (
+            <SelectItem key={t.id} value={t.id}>
+              {t.name}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <FormDescription>
+        {getTemplate(field.value)?.description}
+      </FormDescription>
+      <FormMessage />
+    </FormItem>
+  )}
+/>
 ```
 
-4. **ローディング中はフォーム送信を無効にする（任意）**
+4. **「詳細設定」カードのタイトルをローディング表示に対応させる**
 
-`isLoadingTemplates` が true のあいだは「作成」ボタンを `disabled` にするとよい。
+`isLoading`（versions と templates 両方が揃うまで true）で `Loader2` を表示する。
 
-**確認**  
-- `/sites/new` を開き、テンプレートを切り替えると、WP 版・PHP 版・DB 種類・DB 版がフォームに反映される。  
+```tsx
+<CardTitle className="text-lg flex items-center gap-2">
+  詳細設定
+  {isLoading && (
+    <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+  )}
+</CardTitle>
+```
+
+**確認**
+- `/sites/new` を開き、テンプレートを切り替えると、WP 版・PHP 版・DB 種類・DB 版がフォームに反映される。
+- サイト名・パス・管理者情報はテンプレート切り替えで消えない。
 - `templates/mysql8.yml` などを追加した場合、一覧に表示され、選択すると DB が MySQL に変わる。
 
 ---

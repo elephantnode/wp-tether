@@ -27,20 +27,24 @@ AIに任せきりにせず、各技術の「なぜ」と「何をしているか
 | [step-03-site-creation.md](step-03-site-creation.md) | **Step 3**：新規サイト作成フォーム、POST API、Docker 用ファイル生成 |
 | [step-04-start-stop.md](step-04-start-stop.md) | **Step 4**：起動・停止 API、実際のコンテナ状態の反映 |
 | [step-05-templates-and-delete.md](step-05-templates-and-delete.md) | **Step 5**：テンプレート YAML、サイト削除 |
-| [step-06-deploy.md](step-06-deploy.md) | **Step 6**：デプロイターゲット、ファイル同期 API |
-| [step-07-other.md](step-07-other.md) | **Step 7**：コンテナ一覧・ログ、QR コード、トンネル、設定のエクスポート |
+| [step-06-deploy.md](step-06-deploy.md) | **Step 6**：デプロイターゲット、ファイル同期（rsync） |
+| [step-07-other.md](step-07-other.md) | **Step 7**：コンテナ一覧・ログ、QR コード、エクスポート/インポート |
+| [step-08-db-sync.md](step-08-db-sync.md) | **Step 8**：DB 同期（Push/Pull、URL 置換、ユーザー除外） |
+| [step-09-tunnel-security.md](step-09-tunnel-security.md) | **Step 9**：トンネル（cloudflared/ngrok）、セキュリティスキャン |
 
 **全体の道のり**
 
 | ステップ | 対応する主要機能 | やること |
 |----------|------------------|----------|
-| **Step 1** | 土台 | 開発環境の準備、Next.js プロジェクト作成、データ置き場と型の定義 |
+| **Step 1** | 土台 | 開発環境の準備、Next.js プロジェクト作成、shadcn/ui、データ置き場と型の定義 |
 | **Step 2** | サイト管理（一覧） | サイト一覧の取得 API、ダッシュボード画面で一覧表示 |
 | **Step 3** | サイト管理（作成） | 新規サイト作成フォーム、POST API、Docker 用ファイル生成 |
 | **Step 4** | サイト管理（起動・停止） | 起動・停止 API、実際のコンテナ状態の反映 |
 | **Step 5** | テンプレート・削除 | テンプレート YAML、サイト削除 |
-| **Step 6** | デプロイ・同期 | デプロイターゲット、ファイル同期（rsync）、DB 同期 |
-| **Step 7** | その他 | コンテナ一覧・ログ、トンネル・QR コード、設定のエクスポートなど |
+| **Step 6** | ファイル同期 | デプロイターゲット、rsync によるファイル同期（Push/Pull） |
+| **Step 7** | コンテナ・エクスポート | コンテナ一覧・ログ、QR コード、設定のエクスポート/インポート（マージ/上書き）、設定ファイル再生成、フォルダ/ターミナル起動、孤児ターゲットクリーンアップ、Docker タグ取得 |
+| **Step 8** | DB 同期 | DB 同期（Push/Pull）、URL 置換、ユーザーテーブル除外 |
+| **Step 9** | トンネル・セキュリティ | cloudflared/ngrok トンネル、セキュリティスキャン |
 
 ---
 
@@ -60,6 +64,9 @@ AIに任せきりにせず、各技術の「なぜ」と「何をしているか
 | [chapter-08-docker-compose.md](chapter-08-docker-compose.md) | 第7章：Docker Compose の中身を理解する |
 | [chapter-09-start-stop.md](chapter-09-start-stop.md) | 第8章：起動・停止と「実際の状態」 |
 | [chapter-10-templates.md](chapter-10-templates.md) | 第9章：テンプレート（YAML）の読み込み |
-| [chapter-11-deploy.md](chapter-11-deploy.md) | 第10章：デプロイ・同期の考え方（ここから先の発展） |
+| [chapter-11-deploy.md](chapter-11-deploy.md) | 第10章：デプロイ・同期の考え方 |
+| [chapter-12-db-sync.md](chapter-12-db-sync.md) | 第11章：DB 同期の仕組み |
+| [chapter-13-tunnel.md](chapter-13-tunnel.md) | 第12章：トンネルの仕組み |
+| [chapter-14-security-scan.md](chapter-14-security-scan.md) | 第13章：セキュリティスキャンの仕組み |
 | [security.md](security.md) | 実装で気をつけたいセキュリティ対策 |
 | [summary.md](summary.md) | まとめ：データの流れの整理 / 次のステップ |

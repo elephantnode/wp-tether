@@ -6,40 +6,35 @@
 
 ---
 
-## 4-1. 実際のコンテナ状態を取得する（lib/sites.ts）
+## 4-1. getActualContainerStatus を改良する（lib/sites.ts）
 
-**何をするか**  
-各サイトのディレクトリで `docker compose ps --format json` を実行し、WordPress コンテナが running かどうかで「起動中」「停止」を判定する関数を `lib/sites.ts` に追加する。その結果を使って、一覧取得時に「実際の状態」で上書きする **getSitesWithActualStatus()** も追加する。
+**何をするか**
+Step 1 で実装した `getActualContainerStatus()` と `getSitesWithActualStatus()` を、環境差に対応した改良版に置き換えます。Step 1 の基本実装は `split("\n")` による単純な行分割でしたが、Docker のバージョンや OS によって出力形式が異なり、誤判定になることがあります。
 
-**なぜ必要か**  
-- ユーザーがターミナルで `docker compose down` した、またはクラッシュしたなど、**アプリの外で状態が変わることがある**。  
-- sites.json の `status` だけを信じていると、実際は止まっているのに「起動中」と表示されてしまう。  
+**なぜ必要か**
+- ユーザーがターミナルで `docker compose down` した、またはクラッシュしたなど、**アプリの外で状態が変わることがある**。
+- sites.json の `status` だけを信じていると、実際は止まっているのに「起動中」と表示されてしまう。
 - 一覧を表示するたびに「今この瞬間のコンテナ状態」を取得して反映すれば、表示と実態が一致する。
+
+**仕組み**
+
+| 関数 | 役割 |
+|------|------|
+| `getActualContainerStatus(sitePath)` | `docker compose ps --format json` を実行し、wordpress コンテナの State を判定 |
+| `getSitesWithActualStatus()` | 全サイトの実際の状態を並列で取得し、sites.json の status と異なれば上書き |
 
 **手順**
 
-`src/lib/sites.ts` を開き、**ファイル先頭で `execFile` を import** し、`deleteSite` のあとに次のコードを追加する。
-
-```typescript
-import { execFile } from "child_process";
-import { promisify } from "util";
-
-const execFileAsync = promisify(execFile);
-```
-
-（既に `execFile` や `execFileAsync` がある場合は追加不要。）
-
-そのうえで、`deleteSite` の直後に以下を追加する。
+`src/lib/sites.ts` を開き、既存の `getActualContainerStatus` 関数と `getSitesWithActualStatus` 関数を以下に置き換える。`execFile` と `execFileAsync` は Step 1 で定義済みのため追加不要。
 
 ```typescript
 /**
  * サイトのDockerコンテナの実際の稼働状態を取得
- * WordPressコンテナ（wordpress）が running かどうかで判定
+ * WordPressサービスのコンテナが running かどうかで判定
  *
- * 環境差への対応:
- * - 行区切りが \r\n のとき: split(/\r?\n/) で \n / \r\n のどちらでも分割
- * - 出力が配列 [...] のとき: 要素をループ。オブジェクトの場合は [parsed] として扱う
- * - 1行に複数JSONや改行が含まれるとき: パース失敗時のみ \n で分割し先頭を再パース
+ * Docker Compose v2 は NDJSON（1行1オブジェクト）または JSON 配列を出力する。
+ * コンテナ名は ${PROJECT_NAME}_wp 形式のため _wp サフィックスでも照合する。
+ * State フィールドのほか Status（"Up 2 hours" など）もフォールバックとして参照する。
  */
 async function getActualContainerStatus(
   sitePath: string
@@ -55,45 +50,43 @@ async function getActualContainerStatus(
       return "stopped";
     }
 
-    // \n および \r\n のどちらでも行分割。各行を trim し空行を除外
-    const lines = stdout
-      .trim()
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter(Boolean);
+    // 行ごとにパースして有効なコンテナオブジェクトをすべて収集する
+    // NDJSON（1行1オブジェクト）と JSON 配列の両方に対応
+    const containers: Record<string, unknown>[] = [];
+    const lines = stdout.trim().split(/\r?\n/).filter(Boolean);
 
     for (const line of lines) {
       try {
         const parsed = JSON.parse(line);
-        const items = Array.isArray(parsed) ? parsed : [parsed];
-        for (const container of items) {
-          if (
-            container.Service === "wordpress" ||
-            container.Name?.includes("wordpress")
-          ) {
-            if (container.State === "running") {
-              return "running";
-            }
-          }
+        if (Array.isArray(parsed)) {
+          containers.push(...parsed);
+        } else if (parsed && typeof parsed === "object") {
+          containers.push(parsed as Record<string, unknown>);
         }
       } catch {
-        // 1行に複数JSONや改行が含まれる場合: \n で分割し先頭のみ再パース
-        const first = line.split("\n")[0]?.trim();
-        if (first) {
-          try {
-            const container = JSON.parse(first);
-            if (
-              container.Service === "wordpress" ||
-              container.Name?.includes("wordpress")
-            ) {
-              if (container.State === "running") {
-                return "running";
-              }
-            }
-          } catch {
-            // 無視
-          }
-        }
+        // JSON ではない行（"[" や "]" のみの行など）はスキップ
+      }
+    }
+
+    for (const container of containers) {
+      const service = container.Service;
+      const name = typeof container.Name === "string" ? container.Name : "";
+
+      const isWordPress =
+        service === "wordpress" ||
+        name.includes("wordpress") ||
+        name.endsWith("_wp");
+
+      if (!isWordPress) continue;
+
+      const state = typeof container.State === "string" ? container.State : "";
+      const status = typeof container.Status === "string" ? container.Status : "";
+
+      if (
+        state.toLowerCase() === "running" ||
+        status.toLowerCase().startsWith("up")
+      ) {
+        return "running";
       }
     }
 
@@ -130,15 +123,21 @@ export async function getSitesWithActualStatus(): Promise<Site[]> {
 
 **補足（環境差への対応）**
 
-`docker compose ps --format json` の出力は環境によって次のような違いがあり、以前はパース失敗で「Error parsing Docker compose output」や常に stopped 判定になることがありました。
+`docker compose ps --format json` の出力形式と WordPress コンテナ名は環境・バージョンによって異なります。
 
-| 違い | 対応 |
+| 問題 | 対応 |
 |------|------|
-| 行区切りが `\r\n`（CRLF） | `split(/\r?\n/)` で `\n` / `\r\n` のどちらでも行に分割。各行は `trim()` し、空行は `filter(Boolean)` で除外 |
-| 出力が配列 `[...]` になる | パース結果が配列ならその要素を、オブジェクトなら `[parsed]` としてループし、どちらの形式でも wordpress サービスを探す |
-| 1行に複数JSONや途中改行が含まれる | `JSON.parse(line)` が失敗したときだけ、その行を `\n` で分割し、先頭の 1 行だけを再度 `JSON.parse` して wordpress の State を判定 |
+| 行区切りが `\r\n`（CRLF） | `split(/\r?\n/)` + `trim()` + `filter(Boolean)` で正規化 |
+| NDJSON（1行1オブジェクト）か JSON配列かで形式が違う | すべての行をパースして `containers[]` に収集してから判定 |
+| コンテナ名が `mysite_wp`（`${PROJECT_NAME}_wp`） | `Service === "wordpress"` に加えて `name.endsWith("_wp")` でも検出 |
+| `State` フィールドがない Docker バージョン | `Status.startsWith("up")` をフォールバックに追加 |
 
-これにより、環境が変わってもステータスが正しく判定される想定です。
+デバッグ時は以下でそのまま出力を確認できます。
+
+```bash
+# サイトのディレクトリで実行
+docker compose ps --format json
+```
 
 **確認**  
 - `npm run build` が通る。
@@ -175,18 +174,55 @@ const sites = await getSitesWithActualStatus();
 
 **手順**
 
-`src/app/page.tsx` を開き、`getSites` を `getSitesWithActualStatus` に変更する。
+`src/app/page.tsx` を以下の内容に置き換える。Step 2 からの変更点は 2 つ：①`getSites` → `getSitesWithActualStatus`、② `displaySites` に `hostnameMode` を追加（SiteCard の props が増えたため）。
 
 ```typescript
+import { SiteCard } from "@/components/site-card";
 import { getSitesWithActualStatus } from "@/lib/sites";
 
 export default async function Dashboard() {
   const sites = await getSitesWithActualStatus();
-  // ...
+
+  const displaySites = sites.map((site) => ({
+    id: site.id,
+    name: site.name,
+    status: site.status,
+    hostname: site.config.hostname,
+    hostnameMode: site.config.hostnameMode,
+    path: site.path,
+    port: site.config.port,
+    wpVersion: site.config.wordpress.version,
+    phpVersion: site.config.php.version,
+    dbType: `${site.config.database.type === "mysql" ? "MySQL" : "MariaDB"} ${site.config.database.version}`,
+  }));
+
+  return (
+    <div>
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold">サイト一覧</h1>
+        <p className="text-gray-500">管理中のWordPressサイト</p>
+      </div>
+
+      {displaySites.length > 0 ? (
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {displaySites.map((site) => (
+            <SiteCard key={site.id} site={site} />
+          ))}
+        </div>
+      ) : (
+        <div className="py-12 text-center text-gray-500">
+          <p>サイトがありません</p>
+          <p className="text-sm">
+            <a href="/sites/new" className="text-blue-600 hover:underline">新規サイト作成</a> から始めましょう
+          </p>
+        </div>
+      )}
+    </div>
+  );
 }
 ```
 
-**確認**  
+**確認**
 - トップページを開いたとき、各カードの「起動中」「停止」表示が実際のコンテナ状態と一致する。
 
 ---
@@ -356,20 +392,44 @@ Step 2 で作った `SiteCard` は静的な表示だけだった。ここで **�
 
 **手順**
 
-`src/components/site-card.tsx` を、次のように変更する。
+`src/components/site-card.tsx` を以下の内容に置き換える。
 
-1. **先頭に `"use client";` を追加**（まだ無ければ）。
-2. **useState と useRouter を import**  
-   `import { useState } from "react";` と `import { useRouter } from "next/navigation";`
-3. **props の status の型を具体化**  
-   `status: string` を `status: "running" | "stopped" | "creating" | "error"` にしておく（Step 2 のままでよい場合はそのままでも可）。
-4. **コンポーネント内で state とハンドラを定義**
+```tsx
+"use client";
 
-```typescript
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { Loader2 } from "lucide-react";
+
+interface SiteCardProps {
+  site: {
+    id: string;
+    name: string;
+    status: "running" | "stopped" | "creating" | "error";
+    hostname: string;
+    hostnameMode: "localhost" | "custom";
+    path: string;
+    port: number;
+    wpVersion: string;
+    phpVersion: string;
+    dbType: string;
+  };
+}
+
 export function SiteCard({ site }: SiteCardProps) {
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // status が "creating" のあいだは 3 秒ごとに再取得して自動更新する。
+  // Step 3 でバックグラウンドセットアップが走っており、完了後に "running" へ変わる。
+  useEffect(() => {
+    if (site.status !== "creating") return;
+    const id = setInterval(() => {
+      router.refresh();
+    }, 3000);
+    return () => clearInterval(id);
+  }, [site.status, router]);
 
   async function handleStart() {
     setIsLoading(true);
@@ -406,67 +466,101 @@ export function SiteCard({ site }: SiteCardProps) {
   }
 
   const isRunning = site.status === "running";
+  const isCreating = site.status === "creating";
+
+  const siteUrl =
+    site.hostnameMode === "localhost"
+      ? `http://localhost:${site.port}`
+      : `https://${site.hostname}`;
+
+  return (
+    <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+      <div className="font-semibold text-gray-900">{site.name}</div>
+      <div className="mt-1 text-sm text-gray-500">
+        <a
+          href={siteUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="hover:underline"
+        >
+          {siteUrl}
+        </a>
+      </div>
+
+      <div className="mt-1 flex items-center gap-2 text-xs">
+        <span
+          className={`inline-flex items-center gap-1 rounded px-2 py-0.5 font-medium ${
+            site.status === "running"
+              ? "bg-green-100 text-green-800"
+              : site.status === "creating"
+                ? "bg-blue-100 text-blue-700"
+                : site.status === "error"
+                  ? "bg-red-100 text-red-700"
+                  : "bg-gray-100 text-gray-600"
+          }`}
+        >
+          {isCreating && <Loader2 className="w-3 h-3 animate-spin" />}
+          {site.status === "running"
+            ? "起動中"
+            : site.status === "creating"
+              ? "作成中"
+              : site.status === "error"
+                ? "エラー"
+                : "停止"}
+        </span>
+        <span className="text-gray-400">
+          WP {site.wpVersion} · PHP {site.phpVersion} · {site.dbType}
+        </span>
+      </div>
+
+      <div className="mt-2 flex gap-2">
+        {isCreating ? (
+          <span className="text-xs text-gray-400">セットアップ中は操作できません</span>
+        ) : isRunning ? (
+          <button
+            type="button"
+            onClick={handleStop}
+            disabled={isLoading}
+            className="rounded border border-gray-300 bg-white px-3 py-1.5 text-sm hover:bg-gray-50 disabled:opacity-50"
+          >
+            {isLoading ? "停止中…" : "停止"}
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={handleStart}
+            disabled={isLoading}
+            className="rounded bg-green-600 px-3 py-1.5 text-sm text-white hover:bg-green-700 disabled:opacity-50"
+          >
+            {isLoading ? "起動中…" : "起動"}
+          </button>
+        )}
+      </div>
+
+      {error && <p className="mt-1 text-sm text-red-600">{error}</p>}
+    </div>
+  );
+}
 ```
 
-5. **表示部分にボタンとエラー表示を追加**  
-   ステータスバッジの近くか、カードのフッターに「起動」「停止」ボタンを置く。ローディング中はボタンを disabled にし、error があればその下に表示する。
-
-例（ステータスとボタンを並べる場合）：
-
-```tsx
-<div className="mt-1 flex items-center gap-2 text-xs">
-  <span
-    className={`inline-flex rounded px-2 py-0.5 font-medium ${
-      site.status === "running"
-        ? "bg-green-100 text-green-800"
-        : "bg-gray-100 text-gray-600"
-    }`}
-  >
-    {site.status === "running" ? "起動中" : "停止"}
-  </span>
-  <span className="text-gray-400">
-    WP {site.wpVersion} · PHP {site.phpVersion} · {site.dbType}
-  </span>
-</div>
-<div className="mt-2 flex gap-2">
-  {isRunning ? (
-    <button
-      type="button"
-      onClick={handleStop}
-      disabled={isLoading}
-      className="rounded border border-gray-300 bg-white px-3 py-1.5 text-sm hover:bg-gray-50 disabled:opacity-50"
-    >
-      {isLoading ? "停止中…" : "停止"}
-    </button>
-  ) : (
-    <button
-      type="button"
-      onClick={handleStart}
-      disabled={isLoading}
-      className="rounded bg-green-600 px-3 py-1.5 text-sm text-white hover:bg-green-700 disabled:opacity-50"
-    >
-      {isLoading ? "起動中…" : "起動"}
-    </button>
-  )}
-</div>
-{error && <p className="mt-1 text-sm text-red-600">{error}</p>}
-```
-
-**確認**  
-- トップページで、停止中のサイトに「起動」ボタンが表示される。クリックするとコンテナが起動し、表示が「起動中」に変わり、「停止」ボタンに切り替わる。  
-- 「停止」をクリックするとコンテナが止まり、表示が「停止」に戻り、「起動」ボタンが再度表示される。  
+**確認**
+- トップページで、停止中のサイトに「起動」ボタンが表示される。クリックするとコンテナが起動し、表示が「起動中」に変わり、「停止」ボタンに切り替わる。
+- 「停止」をクリックするとコンテナが止まり、表示が「停止」に戻り、「起動」ボタンが再度表示される。
 - ターミナルで `docker compose down` したあと、ページを再読み込みすると「停止」と表示され、起動ボタンで再度起動できる。
+- 新規作成直後のカードは「作成中」バッジ＋スピナーで表示され、ページ操作なしで自動的に「起動中」へ切り替わる。
 
 ---
 
 ## Step 4 のまとめと確認
 
-- [ ] `lib/sites.ts` に `getActualContainerStatus`（内部）と `getSitesWithActualStatus` がある
+- [ ] `lib/sites.ts` の `getActualContainerStatus` が CRLF・配列形式に対応した改良版になっている
 - [ ] `GET /api/sites` が `getSitesWithActualStatus()` を使い、実際のコンテナ状態を返している
 - [ ] （任意）トップページが `getSitesWithActualStatus()` で一覧を取得している
 - [ ] `POST /api/sites/[id]/start` で `docker compose up -d` と status 更新が行われる
 - [ ] `POST /api/sites/[id]/stop` で `docker compose down` と status 更新が行われる
 - [ ] サイトカードに「起動」「停止」ボタンがあり、クリックで API を呼び、`router.refresh()` で表示が更新される
+- [ ] サイトカードが `running` / `stopped` / `creating` / `error` の 4 状態を正しく表示する
+- [ ] `creating` 状態のカードは 3 秒ごとにポーリングし、セットアップ完了後に自動で「起動中」へ切り替わる
 
 **ここまでで Step 4 は完了です。**  
 次は [Step 5：テンプレート YAML とサイト削除](step-05-templates-and-delete.md) に進んでください。

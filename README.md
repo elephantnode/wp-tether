@@ -35,10 +35,20 @@ Dockerを使用して複数のWordPressサイトを簡単に作成・管理し�
 - cloudflared / ngrok でローカルサイトを一時的に公開
 - QRコード表示でスマホ確認が簡単
 
+### セキュリティチェック
+- **バージョン確認**: WordPress コア・PHP・プラグイン・テーマのバージョンを WP-CLI で取得し一覧表示
+- **ファイルスキャン**: `wp-content` 配下の **PHP** と **JavaScript** を走査し、不審なパターンを検出
+  - PHP: eval, base64_decode, system, exec など
+  - JS: eval, new Function, document.write, innerHTML 代入、setTimeout/setInterval の文字列実行など
+- **npm audit**: `package.json` があるテーマ・プラグインで `npm audit` を実行し、依存関係の脆弱性（critical / high / moderate / low）を表示
+- **脆弱性照合**: [WPVulnerability](https://www.wpvulnerability.com/) API で既知の脆弱性（CVE 等）を照合し、影響ありのものを表示
+- **推奨事項**: 無効化プラグインの削除推奨、PHP EOL 警告、不審なコード・npm 脆弱性の要確認案内を自動表示
+- **キャッシュ**: スキャン結果は再スキャンするまで有効（前回結果を表示し、再スキャンで更新）
+
 ### その他
 - Mailpit統合（メールテスト）
 - WP-CLI + rsync/ssh対応コンテナ
-- プラグインプリセット（一括インストール）
+- プラグインプリセット（一括インストール、実行前に確認ダイアログ）
 - 設定のエクスポート/インポート
 
 ## 技術スタック
@@ -119,6 +129,20 @@ docker compose up -d
 サイトカードの「公開」ボタンで一時的なURLを発行:
 - cloudflared: `xxx.trycloudflare.com`
 - ngrok: `xxx.ngrok-free.app`
+
+### 6. セキュリティチェック
+
+1. サイトカードの「セキュリティ」ボタンをクリック
+2. 確認ダイアログで「スキャン実行」を選択
+3. 結果モーダルで以下を確認:
+   - **バージョン**: WordPress・PHP・プラグイン・テーマのバージョン一覧
+   - **ファイルスキャン**: PHP と JavaScript の不審なコードパターン検出有無
+   - **依存関係（npm audit）**: package.json があるテーマ・プラグインの npm 脆弱性（該当がある場合）
+   - **既知の脆弱性**: WPVulnerability で検出した CVE 等（該当がある場合）
+   - **推奨事項**: 無効化プラグインの削除、PHP アップデート、npm audit fix などの案内
+4. 開くたびに前回の結果を表示。最新結果が必要なときは「再スキャン」をクリックして実行
+
+**注意**: バージョン取得はサイト稼働中のみ。停止中はファイルスキャンのみ実行されます。
 
 ## 生成されるファイル
 

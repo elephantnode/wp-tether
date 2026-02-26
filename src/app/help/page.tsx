@@ -24,6 +24,7 @@ import {
   ExternalLink,
   FolderSync,
   Database,
+  ShieldCheck,
 } from "lucide-react";
 
 interface HelpSection {
@@ -72,9 +73,11 @@ const helpSections: HelpSection[] = [
         <ul className="list-disc list-inside space-y-1">
           <li><strong>起動</strong>: Docker Composeでコンテナを起動</li>
           <li><strong>停止</strong>: コンテナを停止（データは保持）</li>
-          <li><strong>再起動</strong>: コンテナを再起動</li>
-          <li><strong>削除</strong>: サイトを削除（確認あり）</li>
+          <li><strong>再起動</strong>: コンテナを再起動（コンテナ一覧ページから）</li>
+          <li><strong>削除</strong>: サイトを削除（確認ダイアログあり）</li>
           <li><strong>再生成</strong>: docker-compose.ymlなどを再生成</li>
+          <li><strong>プラグイン</strong>: プリセットのプラグインを一括インストール（クリック後に確認ダイアログ→「インストール」で実行）</li>
+          <li><strong>セキュリティ</strong>: バージョン確認・ファイルスキャン・脆弱性照合（クリック後に確認ダイアログ→「スキャン実行」で実行）</li>
         </ul>
         <h4 className="font-medium mt-4">コマンドラインから</h4>
         <pre className="bg-muted p-3 rounded text-sm">
@@ -221,8 +224,11 @@ brew install ngrok         # 代替`}
           <li>「設定」→「プラグインプリセット」を開く</li>
           <li>インストールしたいプラグインのスラッグを1行ずつ入力</li>
           <li>「保存」をクリック</li>
-          <li>サイトカードの「プラグインインストール」で一括インストール</li>
+          <li>サイトカードの「プラグイン」ボタンをクリック → 確認ダイアログで「インストール」を選ぶと一括インストール</li>
         </ol>
+        <p className="text-sm text-muted-foreground">
+          既にインストール済みのプラグインはスキップされます。
+        </p>
         <h4 className="font-medium mt-4">スラッグの確認方法</h4>
         <p className="text-muted-foreground">
           WordPress公式リポジトリのURLから確認:
@@ -230,6 +236,37 @@ brew install ngrok         # 代替`}
         <pre className="bg-muted p-2 rounded text-sm mt-2">
           https://wordpress.org/plugins/<strong>contact-form-7</strong>/
         </pre>
+      </div>
+    ),
+  },
+  {
+    id: "security",
+    icon: ShieldCheck,
+    title: "セキュリティチェック",
+    description: "バージョン確認・ファイルスキャン・既知の脆弱性照合",
+    content: (
+      <div className="space-y-4">
+        <h4 className="font-medium">使い方</h4>
+        <ol className="list-decimal list-inside space-y-2">
+          <li>サイトカードの「セキュリティ」ボタンをクリック</li>
+          <li>確認ダイアログで「スキャン実行」をクリック</li>
+          <li>結果モーダルで以下を確認</li>
+        </ol>
+        <h4 className="font-medium mt-4">表示内容</h4>
+        <ul className="list-disc list-inside space-y-1 text-muted-foreground">
+          <li><strong>バージョン</strong>: WordPress・PHP・プラグイン・テーマのバージョン一覧（有効/無効の区別あり）</li>
+          <li><strong>ファイルスキャン</strong>: wp-content 配下の PHP と JavaScript を走査。PHP は eval や base64_decode など、JS は eval や document.write、innerHTML 代入など不審なパターンを検出</li>
+          <li><strong>依存関係（npm audit）</strong>: package.json があるテーマ・プラグインで npm audit を実行し、深刻度別（critical / high / moderate / low）の件数を表示</li>
+          <li><strong>既知の脆弱性（WPVulnerability）</strong>: 外部APIで照合した CVE 等。該当がある場合のみ表示</li>
+          <li><strong>推奨事項</strong>: 無効化プラグインの削除推奨、PHP のサポート終了警告、不審なコード・npm 脆弱性の要確認案内</li>
+        </ul>
+        <h4 className="font-medium mt-4">キャッシュと再スキャン</h4>
+        <p className="text-muted-foreground">
+          スキャン結果は再スキャンするまで有効です。同じサイトで「セキュリティ」を開くと前回の結果を表示します。最新の結果が必要なときは結果モーダル内の「再スキャン」をクリックして実行してください。
+        </p>
+        <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-md p-3 text-sm mt-4">
+          <strong>注意:</strong> バージョン取得はサイトが稼働中の場合のみ行われます。停止中はファイルスキャンのみ実行され、その旨が表示されます。
+        </div>
       </div>
     ),
   },

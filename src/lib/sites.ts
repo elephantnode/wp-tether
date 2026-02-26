@@ -4,11 +4,9 @@ import os from "os";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import { Site } from "@/types";
+import { resolveSitesJsonPath } from "./app-config";
 
 const execFileAsync = promisify(execFile);
-
-const DATA_DIR = path.join(process.cwd(), "data");
-const SITES_FILE = path.join(DATA_DIR, "sites.json");
 
 interface SitesData {
   sites: Site[];
@@ -29,7 +27,8 @@ export function expandPath(inputPath: string): string {
  */
 export async function getSites(): Promise<Site[]> {
   try {
-    const content = await fs.readFile(SITES_FILE, "utf-8");
+    const sitesFile = await resolveSitesJsonPath();
+    const content = await fs.readFile(sitesFile, "utf-8");
     const data: SitesData = JSON.parse(content);
     return data.sites;
   } catch {
@@ -41,8 +40,9 @@ export async function getSites(): Promise<Site[]> {
  * サイトを保存
  */
 export async function saveSites(sites: Site[]): Promise<void> {
-  await fs.mkdir(DATA_DIR, { recursive: true });
-  await fs.writeFile(SITES_FILE, JSON.stringify({ sites }, null, 2));
+  const sitesFile = await resolveSitesJsonPath();
+  await fs.mkdir(path.dirname(sitesFile), { recursive: true });
+  await fs.writeFile(sitesFile, JSON.stringify({ sites }, null, 2));
 }
 
 /**
@@ -92,13 +92,16 @@ export async function deleteSite(id: string): Promise<boolean> {
 
 /**
  * サイトのDockerコンテナの実際の稼働状態を取得
- * WordPressコンテナ（wordpress）が running かどうかで判定
+ * WordPressサービスのコンテナが running かどうかで判定
+ *
+ * Docker Compose v2 は NDJSON（1行1オブジェクト）または JSON 配列を出力する。
+ * コンテナ名は ${PROJECT_NAME}_wp 形式のため _wp サフィックスでも照合する。
+ * State フィールドのほか Status（"Up 2 hours" など）もフォールバックとして参照する。
  */
 async function getActualContainerStatus(
   sitePath: string
 ): Promise<"running" | "stopped" | "error"> {
   try {
-    // docker compose ps でコンテナの状態を確認
     const { stdout } = await execFileAsync(
       "docker",
       ["compose", "ps", "--format", "json"],
@@ -109,28 +112,48 @@ async function getActualContainerStatus(
       return "stopped";
     }
 
-    // 各行がJSONオブジェクト（Docker Compose v2の出力形式）
-    const lines = stdout.trim().split("\n");
+    // 行ごとにパースして有効なコンテナオブジェクトをすべて収集する
+    // NDJSON（1行1オブジェクト）と JSON 配列の両方に対応
+    const containers: Record<string, unknown>[] = [];
+    const lines = stdout.trim().split(/\r?\n/).filter(Boolean);
+
     for (const line of lines) {
       try {
-        const container = JSON.parse(line);
-        // wordpressコンテナの状態をチェック
-        if (
-          container.Service === "wordpress" ||
-          container.Name?.includes("wordpress")
-        ) {
-          if (container.State === "running") {
-            return "running";
-          }
+        const parsed = JSON.parse(line);
+        if (Array.isArray(parsed)) {
+          containers.push(...parsed);
+        } else if (parsed && typeof parsed === "object") {
+          containers.push(parsed as Record<string, unknown>);
         }
       } catch {
-        // JSON解析エラーは無視
+        // JSON ではない行（"[" や "]" のみの行など）はスキップ
+      }
+    }
+
+    for (const container of containers) {
+      const service = container.Service;
+      const name = typeof container.Name === "string" ? container.Name : "";
+
+      const isWordPress =
+        service === "wordpress" ||
+        name.includes("wordpress") ||
+        name.endsWith("_wp");
+
+      if (!isWordPress) continue;
+
+      const state = typeof container.State === "string" ? container.State : "";
+      const status = typeof container.Status === "string" ? container.Status : "";
+
+      if (
+        state.toLowerCase() === "running" ||
+        status.toLowerCase().startsWith("up")
+      ) {
+        return "running";
       }
     }
 
     return "stopped";
   } catch {
-    // docker compose psが失敗した場合（ディレクトリが存在しない等）
     return "stopped";
   }
 }
