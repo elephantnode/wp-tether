@@ -1,9 +1,7 @@
 import fs from "fs/promises";
 import path from "path";
 import { DeployTarget } from "@/types";
-
-const DATA_DIR = path.join(process.cwd(), "data");
-const DEPLOY_TARGETS_FILE = path.join(DATA_DIR, "deploy-targets.json");
+import { resolveDeployTargetsJsonPath } from "./app-config";
 
 interface DeployTargetsData {
   targets: DeployTarget[];
@@ -14,7 +12,8 @@ interface DeployTargetsData {
  */
 export async function getDeployTargets(siteId?: string): Promise<DeployTarget[]> {
   try {
-    const content = await fs.readFile(DEPLOY_TARGETS_FILE, "utf-8");
+    const file = await resolveDeployTargetsJsonPath();
+    const content = await fs.readFile(file, "utf-8");
     const data: DeployTargetsData = JSON.parse(content);
     if (siteId) {
       return data.targets.filter((t) => t.siteId === siteId);
@@ -29,8 +28,9 @@ export async function getDeployTargets(siteId?: string): Promise<DeployTarget[]>
  * デプロイターゲットを保存
  */
 export async function saveDeployTargets(targets: DeployTarget[]): Promise<void> {
-  await fs.mkdir(DATA_DIR, { recursive: true });
-  await fs.writeFile(DEPLOY_TARGETS_FILE, JSON.stringify({ targets }, null, 2));
+  const file = await resolveDeployTargetsJsonPath();
+  await fs.mkdir(path.dirname(file), { recursive: true });
+  await fs.writeFile(file, JSON.stringify({ targets }, null, 2));
 }
 
 /**

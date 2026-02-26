@@ -52,10 +52,11 @@ export default function SettingsPage() {
   // クリーンアップ用state
   const [isCleaning, setIsCleaning] = useState(false);
 
-  // アプリ設定（データパス）
-  const [sitesJsonPath, setSitesJsonPath] = useState("");
-  const [resolvedPath, setResolvedPath] = useState("");
+  // アプリ設定（データディレクトリ）
+  const [dataDir, setDataDir] = useState("");
+  const [resolvedDataDir, setResolvedDataDir] = useState("");
   const [isSavingPath, setIsSavingPath] = useState(false);
+  const [isPickingFolder, setIsPickingFolder] = useState(false);
   const [pathMessage, setPathMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [showMigrateDialog, setShowMigrateDialog] = useState(false);
 
@@ -76,18 +77,34 @@ export default function SettingsPage() {
       const res = await fetch("/api/app-config");
       if (res.ok) {
         const data = await res.json();
-        setSitesJsonPath(data.sitesJsonPath ?? "");
-        setResolvedPath(data.resolvedSitesJsonPath ?? "");
+        setDataDir(data.dataDir ?? "");
+        setResolvedDataDir(data.resolvedDataDir ?? "");
       }
     } catch (error) {
       console.error("Failed to fetch app config:", error);
     }
   }
 
+  async function handlePickFolder() {
+    setIsPickingFolder(true);
+    try {
+      const res = await fetch("/api/pick-folder");
+      if (res.ok) {
+        const data = await res.json();
+        if (!data.cancelled && data.path) {
+          setDataDir(data.path);
+        }
+      }
+    } catch (error) {
+      console.error("Failed to pick folder:", error);
+    } finally {
+      setIsPickingFolder(false);
+    }
+  }
+
   function handleSavePath() {
-    // パスが変更されている場合はマイグレーション確認を表示
-    const isChangingToNewPath = sitesJsonPath && sitesJsonPath !== resolvedPath;
-    if (isChangingToNewPath) {
+    const isChangingToNewPath = dataDir !== resolvedDataDir;
+    if (dataDir && isChangingToNewPath) {
       setShowMigrateDialog(true);
     } else {
       savePath(false);
@@ -101,17 +118,12 @@ export default function SettingsPage() {
       const res = await fetch("/api/app-config", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sitesJsonPath, migrate }),
+        body: JSON.stringify({ dataDir, migrate }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "保存に失敗しました");
-      setSitesJsonPath(data.sitesJsonPath ?? "");
-      // GET で解決済みパスを再取得
-      const getRes = await fetch("/api/app-config");
-      if (getRes.ok) {
-        const getData = await getRes.json();
-        setResolvedPath(getData.resolvedSitesJsonPath ?? "");
-      }
+      setDataDir(data.dataDir ?? "");
+      setResolvedDataDir(data.resolvedDataDir ?? "");
       setPathMessage({
         type: "success",
         text: migrate ? "保存しました（既存データをコピーしました）" : "保存しました",
@@ -220,7 +232,6 @@ export default function SettingsPage() {
       setImportMessage({ type: "error", text: message });
     } finally {
       setIsImporting(null);
-      // ファイル入力をリセット
       if (type === "sites" && sitesFileInputRef.current) {
         sitesFileInputRef.current.value = "";
       }
@@ -273,8 +284,8 @@ export default function SettingsPage() {
         <AlertDialogHeader>
           <AlertDialogTitle>既存データをコピーしますか？</AlertDialogTitle>
           <AlertDialogDescription>
-            現在の sites.json の内容を新しいパスにコピーします。
-            新しいパスにすでにファイルが存在する場合はコピーしません。
+            現在の sites.json・deploy-targets.json・plugin-presets.json を新しいフォルダにコピーします。
+            新しいフォルダにすでにファイルが存在する場合はコピーしません。
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
@@ -287,7 +298,7 @@ export default function SettingsPage() {
     <div className="space-y-4">
       <h1 className="text-2xl font-bold">設定</h1>
 
-      {/* データパス設定 */}
+      {/* データフォルダ設定 */}
       <Collapsible open={openSections.appConfig} onOpenChange={() => toggleSection("appConfig")}>
         <Card>
           <CollapsibleTrigger asChild>
@@ -296,9 +307,9 @@ export default function SettingsPage() {
                 <div className="flex items-center gap-2">
                   <FolderOpen className="w-5 h-5" />
                   <div>
-                    <CardTitle className="text-base">データパス設定</CardTitle>
+                    <CardTitle className="text-base">データフォルダ設定</CardTitle>
                     <CardDescription className="mt-1">
-                      sites.json の保存場所を変更して複数のwp-tetherインスタンス間で設定を共有
+                      sites.json・deploy-targets.json・plugin-presets.json の保存場所を変更
                     </CardDescription>
                   </div>
                 </div>
@@ -313,14 +324,27 @@ export default function SettingsPage() {
           <CollapsibleContent>
             <CardContent className="space-y-4 pt-0">
               <div className="space-y-2">
-                <label className="text-sm font-medium">sites.json のパス</label>
+                <label className="text-sm font-medium">データフォルダ</label>
                 <div className="flex items-center gap-2">
                   <Input
-                    placeholder="空欄 = デフォルト (data/sites.json)"
-                    value={sitesJsonPath}
-                    onChange={(e) => setSitesJsonPath(e.target.value)}
+                    placeholder="空欄 = デフォルト (data/)"
+                    value={dataDir}
+                    onChange={(e) => setDataDir(e.target.value)}
                     className="font-mono text-sm"
                   />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handlePickFolder}
+                    disabled={isPickingFolder}
+                    title="フォルダを選択"
+                  >
+                    {isPickingFolder ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <FolderOpen className="w-4 h-4" />
+                    )}
+                  </Button>
                   <Button onClick={handleSavePath} disabled={isSavingPath} size="sm">
                     {isSavingPath ? (
                       <Loader2 className="w-4 h-4 mr-2 animate-spin" />
@@ -330,10 +354,12 @@ export default function SettingsPage() {
                     保存
                   </Button>
                 </div>
-                <p className="text-xs text-muted-foreground">
-                  現在の有効パス:{" "}
-                  <code className="bg-muted px-1 rounded">{resolvedPath || "（取得中）"}</code>
-                </p>
+                <div className="space-y-1 text-xs text-muted-foreground">
+                  <p>有効フォルダ: <code className="bg-muted px-1 rounded">{resolvedDataDir || "（取得中）"}</code></p>
+                  <p className="text-muted-foreground/70">
+                    sites.json / deploy-targets.json / plugin-presets.json がこのフォルダに保存されます
+                  </p>
+                </div>
               </div>
 
               {pathMessage && (
@@ -351,10 +377,10 @@ export default function SettingsPage() {
               <div className="text-sm text-muted-foreground space-y-1">
                 <p className="font-medium">使い方:</p>
                 <ul className="list-disc list-inside space-y-1">
-                  <li>空欄にするとデフォルト（<code className="bg-muted px-1 rounded">data/sites.json</code>）を使用</li>
-                  <li>絶対パスまたは <code className="bg-muted px-1 rounded">~/...</code> 形式で指定</li>
-                  <li>例: <code className="bg-muted px-1 rounded">~/Dropbox/wp-tether/sites.json</code></li>
-                  <li>指定先のファイルが存在しない場合は自動作成されます</li>
+                  <li>空欄にするとデフォルト（<code className="bg-muted px-1 rounded">data/</code>）を使用</li>
+                  <li>フォルダアイコンでネイティブダイアログから選択可能</li>
+                  <li>絶対パスまたは <code className="bg-muted px-1 rounded">~/...</code> 形式で直接入力も可</li>
+                  <li>例: <code className="bg-muted px-1 rounded">~/Dropbox/wp-tether</code></li>
                 </ul>
               </div>
             </CardContent>

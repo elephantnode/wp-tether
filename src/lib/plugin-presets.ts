@@ -1,8 +1,6 @@
 import fs from "fs/promises";
 import path from "path";
-
-const DATA_DIR = path.join(process.cwd(), "data");
-const PRESETS_FILE = path.join(DATA_DIR, "plugin-presets.json");
+import { resolvePluginPresetsJsonPath } from "./app-config";
 
 export interface PluginPresets {
   plugins: string[];
@@ -13,7 +11,8 @@ export interface PluginPresets {
  */
 export async function getPluginPresets(): Promise<PluginPresets> {
   try {
-    const content = await fs.readFile(PRESETS_FILE, "utf-8");
+    const file = await resolvePluginPresetsJsonPath();
+    const content = await fs.readFile(file, "utf-8");
     return JSON.parse(content);
   } catch {
     return { plugins: [] };
@@ -24,6 +23,7 @@ export async function getPluginPresets(): Promise<PluginPresets> {
  * プラグインプリセットを保存
  */
 export async function savePluginPresets(presets: PluginPresets): Promise<void> {
-  await fs.mkdir(DATA_DIR, { recursive: true });
-  await fs.writeFile(PRESETS_FILE, JSON.stringify(presets, null, 2));
+  const file = await resolvePluginPresetsJsonPath();
+  await fs.mkdir(path.dirname(file), { recursive: true });
+  await fs.writeFile(file, JSON.stringify(presets, null, 2));
 }

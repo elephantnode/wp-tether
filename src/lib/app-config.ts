@@ -3,14 +3,15 @@ import path from "path";
 import os from "os";
 
 const APP_CONFIG_FILE = path.join(process.cwd(), "data", "app-config.json");
+const DEFAULT_DATA_DIR = path.join(process.cwd(), "data");
 
 export interface AppConfig {
-  /** sites.json の絶対パス（空文字 = デフォルト: data/sites.json） */
-  sitesJsonPath: string;
+  /** データディレクトリの絶対パス（空文字 = デフォルト: data/） */
+  dataDir: string;
 }
 
 const DEFAULT_CONFIG: AppConfig = {
-  sitesJsonPath: "",
+  dataDir: "",
 };
 
 export function expandConfigPath(inputPath: string): string {
@@ -24,6 +25,12 @@ export async function getAppConfig(): Promise<AppConfig> {
   try {
     const content = await fs.readFile(APP_CONFIG_FILE, "utf-8");
     const data = JSON.parse(content);
+
+    // 後方互換: sitesJsonPath が設定されていれば dataDir に変換
+    if (!data.dataDir && data.sitesJsonPath) {
+      data.dataDir = path.dirname(expandConfigPath(data.sitesJsonPath));
+    }
+
     return { ...DEFAULT_CONFIG, ...data };
   } catch {
     return { ...DEFAULT_CONFIG };
@@ -39,13 +46,24 @@ export async function saveAppConfig(config: Partial<AppConfig>): Promise<AppConf
 }
 
 /**
- * 設定に基づいた sites.json の実際のパスを返す
- * sitesJsonPath が空の場合はデフォルト (data/sites.json) を使用
+ * 設定に基づいた実際のデータディレクトリを返す
  */
-export async function resolveSitesJsonPath(): Promise<string> {
+export async function resolveDataDir(): Promise<string> {
   const config = await getAppConfig();
-  if (config.sitesJsonPath) {
-    return expandConfigPath(config.sitesJsonPath);
+  if (config.dataDir) {
+    return expandConfigPath(config.dataDir);
   }
-  return path.join(process.cwd(), "data", "sites.json");
+  return DEFAULT_DATA_DIR;
+}
+
+export async function resolveSitesJsonPath(): Promise<string> {
+  return path.join(await resolveDataDir(), "sites.json");
+}
+
+export async function resolveDeployTargetsJsonPath(): Promise<string> {
+  return path.join(await resolveDataDir(), "deploy-targets.json");
+}
+
+export async function resolvePluginPresetsJsonPath(): Promise<string> {
+  return path.join(await resolveDataDir(), "plugin-presets.json");
 }
