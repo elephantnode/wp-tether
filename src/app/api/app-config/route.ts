@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import fs from "fs/promises";
 import path from "path";
 import { getAppConfig, saveAppConfig, expandConfigPath, resolveSitesJsonPath } from "@/lib/app-config";
 
@@ -36,7 +37,36 @@ export async function PUT(request: NextRequest) {
       }
     }
 
+    const { migrate } = body;
+
+    // パス変更前に現在のデータを読み込む
+    const currentPath = await resolveSitesJsonPath();
+    let existingContent: string | null = null;
+    try {
+      existingContent = await fs.readFile(currentPath, "utf-8");
+    } catch {
+      // 現在のファイルが存在しない場合は無視
+    }
+
     const updated = await saveAppConfig({ sitesJsonPath });
+
+    // migrate=true かつ新しいパスが指定されていて、そのファイルが存在しない場合にデータをコピー
+    if (migrate && sitesJsonPath && existingContent) {
+      const newResolved = expandConfigPath(sitesJsonPath);
+      let newFileExists = false;
+      try {
+        await fs.access(newResolved);
+        newFileExists = true;
+      } catch {
+        // ファイルが存在しない
+      }
+
+      if (!newFileExists) {
+        await fs.mkdir(path.dirname(newResolved), { recursive: true });
+        await fs.writeFile(newResolved, existingContent, "utf-8");
+      }
+    }
+
     return NextResponse.json(updated);
   } catch (error) {
     return NextResponse.json(

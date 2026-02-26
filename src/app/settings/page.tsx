@@ -24,6 +24,16 @@ import {
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Loader2, Save, Package, Download, Upload, Database, Globe, Trash2, ChevronDown, FolderOpen } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 export default function SettingsPage() {
   const [plugins, setPlugins] = useState("");
@@ -47,6 +57,7 @@ export default function SettingsPage() {
   const [resolvedPath, setResolvedPath] = useState("");
   const [isSavingPath, setIsSavingPath] = useState(false);
   const [pathMessage, setPathMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [showMigrateDialog, setShowMigrateDialog] = useState(false);
 
   // 展開状態
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
@@ -73,14 +84,24 @@ export default function SettingsPage() {
     }
   }
 
-  async function handleSavePath() {
+  function handleSavePath() {
+    // パスが変更されている場合はマイグレーション確認を表示
+    const isChangingToNewPath = sitesJsonPath && sitesJsonPath !== resolvedPath;
+    if (isChangingToNewPath) {
+      setShowMigrateDialog(true);
+    } else {
+      savePath(false);
+    }
+  }
+
+  async function savePath(migrate: boolean) {
     setIsSavingPath(true);
     setPathMessage(null);
     try {
       const res = await fetch("/api/app-config", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sitesJsonPath }),
+        body: JSON.stringify({ sitesJsonPath, migrate }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "保存に失敗しました");
@@ -91,7 +112,10 @@ export default function SettingsPage() {
         const getData = await getRes.json();
         setResolvedPath(getData.resolvedSitesJsonPath ?? "");
       }
-      setPathMessage({ type: "success", text: "保存しました" });
+      setPathMessage({
+        type: "success",
+        text: migrate ? "保存しました（既存データをコピーしました）" : "保存しました",
+      });
     } catch (error) {
       setPathMessage({ type: "error", text: error instanceof Error ? error.message : "保存に失敗しました" });
     } finally {
@@ -243,6 +267,23 @@ export default function SettingsPage() {
   }
 
   return (
+    <>
+    <AlertDialog open={showMigrateDialog} onOpenChange={setShowMigrateDialog}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>既存データをコピーしますか？</AlertDialogTitle>
+          <AlertDialogDescription>
+            現在の sites.json の内容を新しいパスにコピーします。
+            新しいパスにすでにファイルが存在する場合はコピーしません。
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel onClick={() => savePath(false)}>コピーしない</AlertDialogCancel>
+          <AlertDialogAction onClick={() => savePath(true)}>コピーする</AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+
     <div className="space-y-4">
       <h1 className="text-2xl font-bold">設定</h1>
 
@@ -572,5 +613,6 @@ wp-mail-smtp"
         </Card>
       </Collapsible>
     </div>
+    </>
   );
 }
