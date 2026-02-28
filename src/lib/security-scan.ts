@@ -2,6 +2,7 @@ import { execFile, execSync } from "child_process";
 import { promisify } from "util";
 import path from "path";
 import fs from "fs/promises";
+import type { Dirent } from "fs";
 import type {
   SecurityVersionInfo,
   SecurityFileScanResult,
@@ -186,7 +187,7 @@ async function walkAndScan(
   dirRelative: string,
   acc: { filesScanned: number; issues: SecurityFileScanIssue[] }
 ): Promise<void> {
-  let entries: fs.Dirent[];
+  let entries: Dirent[];
   try {
     entries = await fs.readdir(dirAbsolute, { withFileTypes: true });
   } catch {
@@ -244,7 +245,7 @@ async function findPackageJsonDirs(wpContentPath: string): Promise<string[]> {
   const dirs: string[] = [];
   for (const sub of ["plugins", "themes"]) {
     const base = path.join(wpContentPath, sub);
-    let entries: fs.Dirent[];
+    let entries: Dirent[];
     try {
       entries = await fs.readdir(base, { withFileTypes: true });
     } catch {

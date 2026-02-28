@@ -58,6 +58,12 @@ export function generateDockerCompose(options: GenerateOptions): string {
     // カスタムホスト名モード: リバースプロキシ対応、ポート番号削除
     wpConfigExtra = `if(isset($$_SERVER['HTTP_X_FORWARDED_PROTO'])){$$_SERVER['HTTPS']=($$_SERVER['HTTP_X_FORWARDED_PROTO']==='https')?'on':'off';$$scheme=$$_SERVER['HTTP_X_FORWARDED_PROTO'];}else{$$scheme=(isset($$_SERVER['HTTPS'])&&$$_SERVER['HTTPS']==='on')?'https':'http';}$$host=isset($$_SERVER['HTTP_X_FORWARDED_HOST'])?$$_SERVER['HTTP_X_FORWARDED_HOST']:(isset($$_SERVER['HTTP_HOST'])?$$_SERVER['HTTP_HOST']:'${config.hostname}');$$host=preg_replace('/:\\d+$/','',$$host);if(!defined('WP_HOME')){define('WP_HOME',$$scheme.'://'.$$host);}if(!defined('WP_SITEURL')){define('WP_SITEURL',$$scheme.'://'.$$host);}`;
   }
+
+  // マルチサイトが有効な場合、WP_ALLOW_MULTISITE を先頭に追記
+  // WP-CLI の multisite-install が wp-config.php を更新する前に必要
+  if (config.wordpress.multisite?.enabled) {
+    wpConfigExtra = `define('WP_ALLOW_MULTISITE', true);` + wpConfigExtra;
+  }
   // YAMLで環境変数値を二重引用符で囲むため、\" と \\ をエスケープ（単一引用符はそのまま）
   const wpConfigExtraEscaped = wpConfigExtra.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 

@@ -7,6 +7,7 @@ import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Form,
   FormControl,
@@ -55,6 +56,9 @@ const formSchema = z.object({
   wpAdminPassword: z.string().min(8, "8文字以上のパスワードを入力してください"),
   wpAdminEmail: z.string().email("有効なメールアドレスを入力してください"),
   wpLocale: z.string(),
+  // マルチサイト
+  multisiteEnabled: z.boolean(),
+  multisiteType: z.enum(["subdomain", "subdirectory"]),
 });
 
 type FormValues = z.infer<typeof formSchema>;
@@ -75,6 +79,8 @@ const defaultValues: FormValues = {
   wpAdminPassword: "",
   wpAdminEmail: "admin@example.com",
   wpLocale: "ja",
+  multisiteEnabled: false,
+  multisiteType: "subdirectory",
 };
 
 const dbTypes = [
@@ -586,6 +592,71 @@ export default function NewSitePage() {
                   )}
                 />
               </div>
+            </CardContent>
+          </Card>
+
+          {/* マルチサイト設定 */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">マルチサイト</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <FormField
+                control={form.control}
+                name="multisiteEnabled"
+                render={({ field }) => (
+                  <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                    <FormControl>
+                      <Checkbox
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                      />
+                    </FormControl>
+                    <div className="space-y-1 leading-none">
+                      <FormLabel>マルチサイト（WordPress Network）を有効にする</FormLabel>
+                      <FormDescription>
+                        単一の WordPress インストールで複数サイトを管理できます
+                      </FormDescription>
+                    </div>
+                  </FormItem>
+                )}
+              />
+
+              {form.watch("multisiteEnabled") && (
+                <div className="space-y-4 pl-7">
+                  <FormField
+                    control={form.control}
+                    name="multisiteType"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>ネットワーク種別</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value}>
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="subdirectory">サブディレクトリ（例: example.test/site2）</SelectItem>
+                            <SelectItem value="subdomain">サブドメイン（例: site2.example.test）</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  {form.watch("multisiteType") === "subdomain" &&
+                    form.watch("hostnameMode") === "localhost" && (
+                    <div className="text-sm text-amber-600 bg-amber-50 border border-amber-200 rounded-md p-3">
+                      <strong>注意:</strong>{" "}
+                      localhostモードではサブドメインマルチサイトの動作は保証されません。
+                      カスタムホスト名モードを使用し、ワイルドカード（例: *.mysite.test）を{" "}
+                      /etc/hosts に設定することを推奨します。
+                    </div>
+                  )}
+                </div>
+              )}
             </CardContent>
           </Card>
 

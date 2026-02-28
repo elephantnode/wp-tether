@@ -14,6 +14,10 @@ export interface SiteInfo {
     password: string;
     email: string;
   };
+  multisite?: {
+    enabled: boolean;
+    type: "subdomain" | "subdirectory";
+  };
 }
 
 export interface SiteCardProps {

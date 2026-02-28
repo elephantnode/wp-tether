@@ -32,6 +32,9 @@ interface CreateSiteRequest {
   wpAdminPassword: string;
   wpAdminEmail: string;
   wpLocale: string;
+  /** マルチサイト設定 */
+  multisiteEnabled?: boolean;
+  multisiteType?: "subdomain" | "subdirectory";
 }
 
 /** wpcli 実行時のタイムアウト（初回はイメージビルドで長くかかることがある） */
@@ -178,6 +181,12 @@ export async function POST(request: NextRequest) {
           email: body.wpAdminEmail,
         },
         locale: body.wpLocale,
+        ...(body.multisiteEnabled && {
+          multisite: {
+            enabled: true,
+            type: body.multisiteType ?? "subdirectory",
+          },
+        }),
       },
       php: {
         version: body.phpVersion,
@@ -298,23 +307,43 @@ export async function POST(request: NextRequest) {
           const siteUrl = body.hostnameMode === "localhost"
             ? `http://localhost:${port}`
             : `https://${hostname}`;
-          await execFileAsync(
-            "docker",
-            [
+
+          if (body.multisiteEnabled) {
+            // マルチサイト: multisite-install で install + multisite 有効化を一括実行
+            const multisiteArgs = [
               "compose", "run", "--rm", "wpcli",
-              "core", "install",
+              "core", "multisite-install",
               `--url=${siteUrl}`,
               `--title=${body.name}`,
               `--admin_user=${body.wpAdminUser}`,
               `--admin_password=${body.wpAdminPassword}`,
               `--admin_email=${body.wpAdminEmail}`,
-              `--locale=${body.wpLocale}`,
-              "--skip-plugins",
-              "--skip-themes",
-            ],
-            { cwd: sitePath, timeout: WPCLI_TIMEOUT_MS }
-          );
-          console.log(`[${body.name}] WordPress installed successfully`);
+            ];
+            if (body.multisiteType === "subdomain") {
+              multisiteArgs.push("--subdomains");
+            }
+            await execFileAsync("docker", multisiteArgs, { cwd: sitePath, timeout: WPCLI_TIMEOUT_MS });
+            console.log(`[${body.name}] WordPress Multisite (${body.multisiteType ?? "subdirectory"}) installed successfully`);
+          } else {
+            // 通常インストール
+            await execFileAsync(
+              "docker",
+              [
+                "compose", "run", "--rm", "wpcli",
+                "core", "install",
+                `--url=${siteUrl}`,
+                `--title=${body.name}`,
+                `--admin_user=${body.wpAdminUser}`,
+                `--admin_password=${body.wpAdminPassword}`,
+                `--admin_email=${body.wpAdminEmail}`,
+                `--locale=${body.wpLocale}`,
+                "--skip-plugins",
+                "--skip-themes",
+              ],
+              { cwd: sitePath, timeout: WPCLI_TIMEOUT_MS }
+            );
+            console.log(`[${body.name}] WordPress installed successfully`);
+          }
 
           // 言語パックをインストール・有効化（en_US 以外の場合）
           if (body.wpLocale && body.wpLocale !== "en_US") {

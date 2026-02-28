@@ -32,6 +32,11 @@ export interface SiteConfig {
     };
     /** WordPress言語（例: ja, en_US） */
     locale?: string;
+    /** マルチサイト設定 */
+    multisite?: {
+      enabled: boolean;
+      type: "subdomain" | "subdirectory";
+    };
   };
 
   php: {

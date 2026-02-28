@@ -106,12 +106,19 @@ export function SiteCard({ site }: SiteCardProps) {
       <CardHeader className="pb-2">
         <div className="flex justify-between items-start">
           <CardTitle className="text-lg">{site.name}</CardTitle>
-          <Badge
-            variant={isRunning ? "default" : "secondary"}
-            className={isRunning ? "bg-green-600 hover:bg-green-700 text-white" : ""}
-          >
-            {isRunning ? "● Running" : "○ Stopped"}
-          </Badge>
+          <div className="flex items-center gap-2">
+            {site.multisite?.enabled && (
+              <Badge variant="outline" className="text-blue-600 border-blue-600 text-xs">
+                Multisite / {site.multisite.type === "subdomain" ? "サブドメイン" : "サブディレクトリ"}
+              </Badge>
+            )}
+            <Badge
+              variant={isRunning ? "default" : "secondary"}
+              className={isRunning ? "bg-green-600 hover:bg-green-700 text-white" : ""}
+            >
+              {isRunning ? "● Running" : "○ Stopped"}
+            </Badge>
+          </div>
         </div>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
           {site.hostnameMode === "localhost" ? (
@@ -277,6 +284,23 @@ export function SiteCard({ site }: SiteCardProps) {
                 管理画面
               </a>
             </Button>
+            {site.multisite?.enabled && (
+              <Button size="sm" variant="outline" asChild>
+                <a
+                  href={
+                    site.hostnameMode === "localhost"
+                      ? `http://localhost:${site.port}/wp-admin/network/`
+                      : `http://${site.hostname}/wp-admin/network/`
+                  }
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title="WordPress ネットワーク管理画面"
+                >
+                  <Globe className="w-4 h-4 mr-1" />
+                  ネットワーク管理
+                </a>
+              </Button>
+            )}
             <Button size="sm" variant="outline" asChild>
               <a
                 href={`http://localhost:${site.port + 1000}`}

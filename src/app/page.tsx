@@ -17,6 +17,7 @@ export default async function Dashboard() {
     phpVersion: site.config.php.version,
     dbType: `${site.config.database.type === "mysql" ? "MySQL" : "MariaDB"} ${site.config.database.version}`,
     admin: site.config.wordpress.admin,
+    multisite: site.config.wordpress.multisite,
   }));
 
   return (
