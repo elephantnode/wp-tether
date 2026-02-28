@@ -67,8 +67,8 @@ export function generateDockerCompose(options: GenerateOptions): string {
     container_name: \${PROJECT_NAME}_db
     image: ${dbImage}
 ${dbCommand ? `    command: '${dbCommand}'` : ""}
-    expose:
-      - 3306
+    ports:
+      - "${port + 1}:3306"
     volumes:
       - db_data:/var/lib/mysql
     environment:
