@@ -222,11 +222,12 @@ export async function POST(request: NextRequest) {
     let useMkcert = false;
     if (body.hostnameMode === "custom") {
       try {
-        await execFileAsync(
-          "mkcert",
-          ["-cert-file", "cert.pem", "-key-file", "key.pem", hostname, "localhost", "127.0.0.1"],
-          { cwd: certsPath }
-        );
+        const mkcertArgs = ["-cert-file", "cert.pem", "-key-file", "key.pem", hostname, "localhost", "127.0.0.1"];
+        // サブドメイン型マルチサイトの場合はワイルドカードも含める（*.hostname）
+        if (body.multisiteEnabled && body.multisiteType === "subdomain") {
+          mkcertArgs.push(`*.${hostname}`);
+        }
+        await execFileAsync("mkcert", mkcertArgs, { cwd: certsPath });
         useMkcert = true;
       } catch {
         // mkcertが未インストールまたは失敗時は Caddy の tls internal を使用

@@ -213,6 +213,29 @@ export function generateCaddyfile(options: CaddyfileOptions): string {
     ? `tls /etc/caddy/certs/cert.pem /etc/caddy/certs/key.pem`
     : "tls internal";
 
+  const reverseProxyBlock = `reverse_proxy wordpress:80 {
+    header_up Host {host}
+    header_up X-Real-IP {remote}
+    header_up X-Forwarded-For {remote}
+    header_up X-Forwarded-Proto {scheme}
+    header_up X-Forwarded-Host {host}
+  }`;
+
+  // サブドメイン型マルチサイトの場合はワイルドカードブロックを追加
+  // *.hostname へのリクエストも同じ WordPress コンテナにルーティングする
+  const isSubdomainMultisite =
+    config.wordpress.multisite?.enabled &&
+    config.wordpress.multisite?.type === "subdomain";
+
+  const wildcardBlock = isSubdomainMultisite
+    ? `
+# *.${config.hostname} - サブドメイン型マルチサイト用ワイルドカード
+*.${config.hostname} {
+  ${tlsDirective}
+  ${reverseProxyBlock}
+}`
+    : "";
+
   return `{
   local_certs
 }
@@ -220,14 +243,8 @@ export function generateCaddyfile(options: CaddyfileOptions): string {
 # ${config.hostname} - ポート番号なしでアクセス可能（HTTP/HTTPS自動対応）
 ${config.hostname} {
   ${tlsDirective}
-  reverse_proxy wordpress:80 {
-    header_up Host {host}
-    header_up X-Real-IP {remote}
-    header_up X-Forwarded-For {remote}
-    header_up X-Forwarded-Proto {scheme}
-    header_up X-Forwarded-Host {host}
-  }
-}
+  ${reverseProxyBlock}
+}${wildcardBlock}
 `;
 }
 

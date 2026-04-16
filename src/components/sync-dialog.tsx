@@ -111,8 +111,8 @@ export function SyncDialog({ open, onOpenChange, target }: SyncDialogProps) {
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-w-2xl">
-        <DialogHeader>
+      <DialogContent className="max-w-2xl flex flex-col max-h-[90vh]">
+        <DialogHeader className="shrink-0">
           <DialogTitle>ファイル同期 - {target.name}</DialogTitle>
           <DialogDescription>
             {target.vhost}
@@ -120,7 +120,7 @@ export function SyncDialog({ open, onOpenChange, target }: SyncDialogProps) {
         </DialogHeader>
 
         {!result ? (
-          <div className="space-y-6 py-4">
+          <div className="space-y-6 py-4 overflow-y-auto flex-1 min-h-0">
             {/* 方向選択 */}
             <div className="space-y-3">
               <Label className="text-base font-medium">同期方向</Label>
@@ -223,7 +223,7 @@ export function SyncDialog({ open, onOpenChange, target }: SyncDialogProps) {
             </div>
           </div>
         ) : (
-          <div className="space-y-4 py-4">
+          <div className="space-y-4 py-4 overflow-y-auto flex-1 min-h-0">
             <div className={`flex items-center gap-2 ${result.success ? "text-green-600" : "text-destructive"}`}>
               {result.success ? (
                 <>
@@ -248,7 +248,7 @@ export function SyncDialog({ open, onOpenChange, target }: SyncDialogProps) {
           </div>
         )}
 
-        <DialogFooter>
+        <DialogFooter className="shrink-0">
           {!result ? (
             <>
               <Button variant="outline" onClick={handleClose} disabled={isSyncing}>

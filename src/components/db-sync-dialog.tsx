@@ -121,8 +121,8 @@ export function DbSyncDialog({ open, onOpenChange, target }: DbSyncDialogProps) 
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
+      <DialogContent className="max-w-2xl flex flex-col max-h-[90vh]">
+        <DialogHeader className="shrink-0">
           <DialogTitle className="flex items-center gap-2">
             <Database className="w-5 h-5" />
             データベース同期 - {target.name}
@@ -133,7 +133,7 @@ export function DbSyncDialog({ open, onOpenChange, target }: DbSyncDialogProps) 
         </DialogHeader>
 
         {!result ? (
-          <div className="space-y-6 py-4">
+          <div className="space-y-6 py-4 overflow-y-auto flex-1 min-h-0">
             {/* リモート能力表示 */}
             {isDetecting ? (
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -272,7 +272,7 @@ export function DbSyncDialog({ open, onOpenChange, target }: DbSyncDialogProps) 
             </div>
           </div>
         ) : (
-          <div className="space-y-4 py-4">
+          <div className="space-y-4 py-4 overflow-y-auto flex-1 min-h-0">
             <div className={`flex items-center gap-2 ${result.success ? "text-green-600" : "text-destructive"}`}>
               {result.success ? (
                 <>
@@ -303,7 +303,7 @@ export function DbSyncDialog({ open, onOpenChange, target }: DbSyncDialogProps) 
           </div>
         )}
 
-        <DialogFooter>
+        <DialogFooter className="shrink-0">
           {!result ? (
             <>
               <Button variant="outline" onClick={handleClose} disabled={isSyncing}>

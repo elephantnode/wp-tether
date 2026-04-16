@@ -1,6 +1,6 @@
 # wp-tether
 
-WordPressローカル開発環境管理ツール（Local by Flywheel / MAMP 代替）
+WordPressローカル開発環境管理ツール
 
 Dockerを使用して複数のWordPressサイトを簡単に作成・管理し、リモートサーバーとのファイル・DB同期も可能です。
 

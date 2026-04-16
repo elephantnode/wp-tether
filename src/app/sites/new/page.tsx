@@ -650,9 +650,38 @@ export default function NewSitePage() {
                     form.watch("hostnameMode") === "localhost" && (
                     <div className="text-sm text-amber-600 bg-amber-50 border border-amber-200 rounded-md p-3">
                       <strong>注意:</strong>{" "}
-                      localhostモードではサブドメインマルチサイトの動作は保証されません。
-                      カスタムホスト名モードを使用し、ワイルドカード（例: *.mysite.test）を{" "}
-                      /etc/hosts に設定することを推奨します。
+                      localhostモードではサブドメインマルチサイトは動作しません。
+                      上の「アクセス方法」をカスタムホスト名に切り替えてください。
+                    </div>
+                  )}
+
+                  {form.watch("multisiteType") === "subdomain" &&
+                    form.watch("hostnameMode") === "custom" && (
+                    <div className="text-sm text-blue-700 bg-blue-50 border border-blue-200 rounded-md p-3 space-y-2">
+                      <p className="font-semibold">サブドメイン型に必要な追加設定</p>
+                      <p>以下は自動で対応します：</p>
+                      <ul className="list-disc list-inside space-y-0.5 text-blue-600">
+                        <li>mkcert でワイルドカード証明書（<code>*.{form.watch("hostname") || "example.test"}</code>）を発行</li>
+                        <li>Caddyfile にワイルドカードブロックを追加</li>
+                      </ul>
+                      <p className="mt-1">以下は手動設定が必要です（DNS ワイルドカード）：</p>
+                      {(() => {
+                        const h = form.watch("hostname") || "example.test";
+                        const tld = h.split(".").pop() ?? "test";
+                        return (
+                          <pre className="text-xs bg-blue-100 rounded p-2 leading-relaxed whitespace-pre-wrap">{`# dnsmasq をインストール（初回のみ）
+brew install dnsmasq
+
+# *.${h} を 127.0.0.1 に解決
+echo 'address=/.${h}/127.0.0.1' >> /opt/homebrew/etc/dnsmasq.conf
+sudo brew services restart dnsmasq
+
+# macOS に .${tld} ドメインのリゾルバを登録（初回のみ）
+sudo mkdir -p /etc/resolver
+sudo sh -c "echo 'nameserver 127.0.0.1' > /etc/resolver/${tld}"`}</pre>
+                        );
+                      })()}
+                      <p className="text-xs text-blue-500">/etc/hosts はワイルドカードに対応していないため dnsmasq が必要です。</p>
                     </div>
                   )}
                 </div>
