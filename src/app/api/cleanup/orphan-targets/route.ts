@@ -11,7 +11,8 @@ export async function POST() {
     const validSiteIds = new Set(sites.map((s) => s.id));
 
     // 孤児ターゲット（存在しないサイトに紐づくもの）を除外
-    const validTargets = targets.filter((t) => validSiteIds.has(t.siteId));
+    // siteId 未設定（保守専用サーバー）は孤児扱いしない
+    const validTargets = targets.filter((t) => !t.siteId || validSiteIds.has(t.siteId));
     const orphanCount = targets.length - validTargets.length;
 
     if (orphanCount > 0) {

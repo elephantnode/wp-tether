@@ -57,7 +57,8 @@ export async function addSite(site: Site): Promise<void> {
 /**
  * サイトを取得
  */
-export async function getSite(id: string): Promise<Site | undefined> {
+export async function getSite(id: string | undefined): Promise<Site | undefined> {
+  if (!id) return undefined;
   const sites = await getSites();
   return sites.find((s) => s.id === id);
 }

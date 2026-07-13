@@ -22,4 +22,5 @@ export interface SiteInfo {
 
 export interface SiteCardProps {
   site: SiteInfo;
+  dragHandle?: React.ReactNode;
 }

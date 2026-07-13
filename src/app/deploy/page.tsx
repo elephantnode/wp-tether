@@ -1,11 +1,10 @@
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Plus, Server, Globe, FolderSync } from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
+import { Plus, FolderSync } from "lucide-react";
 import { getDeployTargets } from "@/lib/deploy-targets";
 import { getSites } from "@/lib/sites";
-import { DeployTargetCard } from "@/components/deploy-target-card";
+import { DeployList, type SiteGroup } from "@/components/deploy-list";
 
 export default async function DeployPage() {
   const [targets, sites] = await Promise.all([
@@ -14,14 +13,28 @@ export default async function DeployPage() {
   ]);
 
   // サイトごとにターゲットをグループ化
-  const siteMap = new Map(sites.map((s) => [s.id, s]));
   const targetsBySite = new Map<string, typeof targets>();
-
+  const standaloneTargets: typeof targets = [];
   for (const target of targets) {
-    const existing = targetsBySite.get(target.siteId) || [];
-    existing.push(target);
-    targetsBySite.set(target.siteId, existing);
+    if (target.siteId) {
+      const existing = targetsBySite.get(target.siteId) || [];
+      existing.push(target);
+      targetsBySite.set(target.siteId, existing);
+    } else {
+      standaloneTargets.push(target);
+    }
   }
+
+  // サイトの保存順を維持してグループ化（サイト一覧と同じ並び）
+  const groups: SiteGroup[] = sites.map((site) => ({
+    siteId: site.id,
+    siteName: site.name,
+    sitePath: site.path,
+    siteStatus: site.status,
+    targets: targetsBySite.get(site.id) ?? [],
+  }));
+
+  const hasAnything = sites.length > 0 || standaloneTargets.length > 0;
 
   return (
     <div>
@@ -29,7 +42,7 @@ export default async function DeployPage() {
         <div>
           <h1 className="text-2xl font-bold">デプロイ</h1>
           <p className="text-muted-foreground">
-            リモートサーバーとの同期設定
+            リモートサーバーとの同期設定（ドラッグでサイトを並べ替え）
           </p>
         </div>
         <Button asChild>
@@ -40,33 +53,8 @@ export default async function DeployPage() {
         </Button>
       </div>
 
-      {targets.length > 0 ? (
-        <div className="space-y-8">
-          {Array.from(targetsBySite.entries()).map(([siteId, siteTargets]) => {
-            const site = siteMap.get(siteId);
-            if (!site) return null;
-
-            return (
-              <div key={siteId}>
-                <div className="flex items-center gap-2 mb-4">
-                  <Globe className="w-5 h-5 text-muted-foreground" />
-                  <h2 className="text-lg font-semibold">{site.name}</h2>
-                  <Badge variant="outline">{siteTargets.length} ターゲット</Badge>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                  {siteTargets.map((target) => (
-                    <DeployTargetCard
-                      key={target.id}
-                      target={target}
-                      sitePath={site.path}
-                      siteStatus={site.status}
-                    />
-                  ))}
-                </div>
-              </div>
-            );
-          })}
-        </div>
+      {hasAnything ? (
+        <DeployList initialGroups={groups} standaloneTargets={standaloneTargets} />
       ) : (
         <Card>
           <CardContent className="py-12 text-center">

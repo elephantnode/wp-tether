@@ -1,4 +1,4 @@
-import { SiteCard } from "@/components/site-card";
+import { SiteList } from "@/components/site-list";
 import { getSites } from "@/lib/sites";
 
 export default async function Dashboard() {
@@ -28,11 +28,7 @@ export default async function Dashboard() {
       </div>
 
       {displaySites.length > 0 ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {displaySites.map((site) => (
-            <SiteCard key={site.id} site={site} />
-          ))}
-        </div>
+        <SiteList initialSites={displaySites} />
       ) : (
         <div className="text-center py-12 text-muted-foreground">
           <p>サイトがありません</p>

@@ -102,19 +102,19 @@ export function useSiteActions({ siteId, sitePath }: UseSiteActionsOptions) {
     }
   }, [siteId]);
 
-  const openFolder = useCallback(async () => {
+  const openEditor = useCallback(async () => {
     try {
-      const res = await fetch("/api/open-folder", {
+      const res = await fetch("/api/open-editor", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ path: sitePath }),
       });
       if (!res.ok) {
         const data = await res.json();
-        setError(data.error || "フォルダを開けませんでした");
+        setError(data.error || "エディタを開けませんでした");
       }
     } catch {
-      setError("フォルダを開けませんでした");
+      setError("エディタを開けませんでした");
     }
   }, [sitePath]);
 
@@ -145,7 +145,7 @@ export function useSiteActions({ siteId, sitePath }: UseSiteActionsOptions) {
     handleStop,
     handleDelete,
     handleInstallPlugins,
-    openFolder,
+    openEditor,
     openTerminal,
   };
 }

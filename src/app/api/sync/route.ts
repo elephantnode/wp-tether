@@ -10,6 +10,8 @@ interface SyncRequest {
   scopes: DeployScope[];
   dryRun?: boolean;
   mode?: SyncMode;
+  /** スコープごとに同期するアイテム名。未指定の場合はフォルダ全体を同期 */
+  selectedItems?: Partial<Record<string, string[]>>;
 }
 
 /**
@@ -69,6 +71,7 @@ export async function POST(request: NextRequest) {
       scopes: body.scopes,
       dryRun: body.dryRun ?? false,
       mode: body.mode ?? "mirror",
+      selectedItems: body.selectedItems,
     });
 
     // 結果をまとめる

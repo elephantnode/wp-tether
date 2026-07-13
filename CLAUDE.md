@@ -27,6 +27,18 @@ npm run lint     # ESLint実行
 - 同期対象: themes, plugins, uploads, mu-plugins, languages
 - 同期モード: mirror / additive / update
 
+### サーバー保守機能（/servers）
+接続先サーバー（SSH+WP-CLI）の監視・保守を行う。共通SSH基盤の上にローカル向け監視・セキュリティ資産をリモート展開した構成。
+- 共通SSH実行: `src/lib/remote-exec.ts`（`executeRemoteCommand` / `runWpCli` / `testConnection`）
+- 監視: `src/lib/server-monitor.ts`（HTTP稼働 / SSL期限 / ディスク / メモリ・ロード / WPヘルス・更新件数）
+- セキュリティ: `src/lib/remote-security.ts`（バージョン / CVE / コア・プラグインchecksum / ファイル権限 / マルウェアgrep / HTTPヘッダ / 露出 / wp-config）
+- メンテ: `src/lib/remote-maintenance.ts`（更新プレビュー / 事前バックアップ付き一括更新 / メンテモード / WP-CLIランナー）
+- 運用: `src/lib/remote-ops.ts`（debug.log/PHP errorログ閲覧 / WP-Cron一覧・実行 / DBバックアップ）
+- 定期実行: `src/instrumentation.ts` + `src/lib/scheduler.ts`（setInterval。監視有効サーバーを間隔ごとにチェック、状態変化時のみ通知、1日1回DBバックアップ）
+- 通知: `src/lib/notify.ts`（macOS通知 / Webhook / アプリ内 data/notifications.json）
+- 資格情報暗号化: `src/lib/secrets.ts`（AES-256-GCM、鍵は `~/.wp-tether/secret.key`。deploy-targets.json のDB/FTPパスワードを暗号化保存。平文値も後方互換で読める）
+- `DeployTarget.siteId` は任意（保守専用の外部サーバーはサイト未紐付けで登録可）
+
 ## 注意点
 
 ### WP-CLI コンテナ
@@ -37,7 +49,10 @@ npm run lint     # ESLint実行
 
 ## データ
 - `data/sites.json` - サイト情報
-- `data/deploy-targets.json` - デプロイターゲット情報
+- `data/deploy-targets.json` - デプロイターゲット情報（DB/FTPパスワードは暗号化保存）
+- `data/monitoring/{targetId}.json` - サーバーヘルスチェックのキャッシュ
+- `data/security/{targetId}.json` - リモートセキュリティスキャンのキャッシュ
+- `data/notifications.json` - アプリ内通知の履歴
 
 ## 実装済み機能
 - サイト管理（作成・起動・停止・削除）
@@ -46,3 +61,4 @@ npm run lint     # ESLint実行
 - WP-CLI自動インストール
 - rsyncファイル同期（Push/Pull、除外パターンUI）
 - DB同期（Push/Pull、URL置換、ユーザー除外オプション）
+- サーバー保守（監視・セキュリティ・更新メンテ・ログ/Cron・定期バックアップ・通知）

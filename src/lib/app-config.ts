@@ -5,13 +5,50 @@ import os from "os";
 const APP_CONFIG_FILE = path.join(process.cwd(), "data", "app-config.json");
 const DEFAULT_DATA_DIR = path.join(process.cwd(), "data");
 
+/** 通知チャネルの設定 */
+export interface NotifyConfig {
+  /** macOS ネイティブ通知を有効にするか（デフォルト true） */
+  macNotifications: boolean;
+  /** Slack Incoming Webhook URL */
+  slackWebhookUrl: string;
+  /** Google Chat Incoming Webhook URL */
+  googleChatWebhookUrl: string;
+  /** 送信する最低レベル（info / warning / critical）。これ未満は外部送信しない */
+  minLevel: "info" | "warning" | "critical";
+}
+
 export interface AppConfig {
   /** データディレクトリの絶対パス（空文字 = デフォルト: data/） */
   dataDir: string;
+  /** サーバーバックアップの保存先（空文字 = デフォルト: {dataDir}/backups/servers） */
+  backupDir: string;
+  /** 通知設定 */
+  notify: NotifyConfig;
+  /** 現在アクティブなターミナルアプリ名 */
+  terminalApp: string;
+  /** 登録済みターミナルアプリ一覧 */
+  terminalApps: string[];
+  /** 現在アクティブなエディタアプリ名 */
+  editorApp: string;
+  /** 登録済みエディタアプリ一覧 */
+  editorApps: string[];
 }
+
+export const DEFAULT_NOTIFY_CONFIG: NotifyConfig = {
+  macNotifications: true,
+  slackWebhookUrl: "",
+  googleChatWebhookUrl: "",
+  minLevel: "warning",
+};
 
 const DEFAULT_CONFIG: AppConfig = {
   dataDir: "",
+  backupDir: "",
+  notify: DEFAULT_NOTIFY_CONFIG,
+  terminalApp: "Terminal",
+  terminalApps: ["Terminal"],
+  editorApp: "Visual Studio Code",
+  editorApps: ["Visual Studio Code"],
 };
 
 export function expandConfigPath(inputPath: string): string {
@@ -31,7 +68,11 @@ export async function getAppConfig(): Promise<AppConfig> {
       data.dataDir = path.dirname(expandConfigPath(data.sitesJsonPath));
     }
 
-    return { ...DEFAULT_CONFIG, ...data };
+    return {
+      ...DEFAULT_CONFIG,
+      ...data,
+      notify: { ...DEFAULT_NOTIFY_CONFIG, ...(data.notify ?? {}) },
+    };
   } catch {
     return { ...DEFAULT_CONFIG };
   }
@@ -60,10 +101,26 @@ export async function resolveSitesJsonPath(): Promise<string> {
   return path.join(await resolveDataDir(), "sites.json");
 }
 
+/**
+ * サーバーバックアップの保存先ディレクトリを返す
+ * 未設定時は {dataDir}/backups/servers
+ */
+export async function resolveBackupDir(): Promise<string> {
+  const config = await getAppConfig();
+  if (config.backupDir) {
+    return expandConfigPath(config.backupDir);
+  }
+  return path.join(await resolveDataDir(), "backups", "servers");
+}
+
 export async function resolveDeployTargetsJsonPath(): Promise<string> {
   return path.join(await resolveDataDir(), "deploy-targets.json");
 }
 
 export async function resolvePluginPresetsJsonPath(): Promise<string> {
   return path.join(await resolveDataDir(), "plugin-presets.json");
+}
+
+export async function resolveHostsConfigJsonPath(): Promise<string> {
+  return path.join(await resolveDataDir(), "hosts.json");
 }

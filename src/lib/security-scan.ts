@@ -621,7 +621,6 @@ export async function checkWordPressExposure(
  */
 export async function checkWpConfig(sitePath: string): Promise<SecurityWpConfigResult> {
   const wpConfigPath = path.join(sitePath, "src", "wp-config.php");
-  const items: SecurityWpConfigCheck[] = [];
 
   let content: string;
   try {
@@ -633,6 +632,15 @@ export async function checkWpConfig(sitePath: string): Promise<SecurityWpConfigR
       items: [],
     };
   }
+
+  return analyzeWpConfig(content);
+}
+
+/**
+ * wp-config.php の内容文字列を解析（ローカル/リモート共通）
+ */
+export function analyzeWpConfig(content: string): SecurityWpConfigResult {
+  const items: SecurityWpConfigCheck[] = [];
 
   // WP_DEBUG チェック
   const debugMatch = content.match(/define\s*\(\s*['"]WP_DEBUG['"]\s*,\s*(true|false|[^)]+)\s*\)/i);
@@ -938,7 +946,7 @@ export function buildRecommendations(
 /**
  * WPVulnerability API でコア・プラグイン・テーマの脆弱性を取得
  */
-async function fetchVulnerabilityChecks(
+export async function fetchVulnerabilityChecks(
   version: SecurityVersionInfo
 ): Promise<SecurityVulnerabilityCheck[]> {
   const results: SecurityVulnerabilityCheck[] = [];

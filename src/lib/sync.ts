@@ -21,7 +21,7 @@ function expandKeyPathForHost(keyPath: string | undefined): string | undefined {
 /**
  * スコープとWordPressパスのマッピング
  */
-const SCOPE_PATHS: Record<Exclude<DeployScope, "all" | "db">, string> = {
+export const SCOPE_PATHS: Record<Exclude<DeployScope, "all" | "db">, string> = {
   themes: "wp-content/themes/",
   plugins: "wp-content/plugins/",
   uploads: "wp-content/uploads/",
@@ -48,6 +48,8 @@ interface SyncOptions {
   scopes: DeployScope[];
   dryRun?: boolean;
   mode?: SyncMode;
+  /** スコープごとに同期するアイテム名を指定。未指定またはemptyの場合はフォルダ全体を同期 */
+  selectedItems?: Partial<Record<string, string[]>>;
 }
 
 interface SyncResult {
@@ -60,7 +62,7 @@ interface SyncResult {
 /**
  * rsyncコマンドの引数を生成
  */
-function buildRsyncArgs(
+export function buildRsyncArgs(
   localPath: string,
   remotePath: string,
   direction: DeployDirection,
@@ -71,6 +73,7 @@ function buildRsyncArgs(
 ): string[] {
   const args = [
     "-avz",
+    "--omit-dir-times",
     "-e", sshOptions,
   ];
 
@@ -112,12 +115,12 @@ function buildRsyncArgs(
 /**
  * SSH接続オプションを生成（ホストの ssh に渡す -e 用）
  */
-function buildSSHOptions(target: DeployTarget): string {
+export function buildSSHOptions(target: DeployTarget): string {
   if (!target.ssh) {
     throw new Error("SSH設定がありません");
   }
 
-  const { host, user, port } = target.ssh;
+  const { port } = target.ssh;
   const keyPath = expandKeyPathForHost(target.ssh.keyPath);
   let sshCmd = `ssh -o StrictHostKeyChecking=no -p ${port}`;
 
@@ -131,7 +134,7 @@ function buildSSHOptions(target: DeployTarget): string {
 /**
  * リモートパスを生成 (user@host:/path/)
  */
-function buildRemotePath(target: DeployTarget, relativePath: string): string {
+export function buildRemotePath(target: DeployTarget, relativePath: string): string {
   if (!target.ssh) {
     throw new Error("SSH設定がありません");
   }
@@ -145,6 +148,37 @@ function buildRemotePath(target: DeployTarget, relativePath: string): string {
 }
 
 /**
+ * 単一アイテム（テーマ・プラグイン名）の同期を実行
+ */
+async function syncScopeItem(
+  itemLocalPath: string,
+  itemRemotePath: string,
+  direction: DeployDirection,
+  excludes: string[],
+  sshOptions: string,
+  dryRun: boolean,
+  mode: SyncMode
+): Promise<{ output: string; error?: string }> {
+  try {
+    const args = buildRsyncArgs(
+      itemLocalPath,
+      itemRemotePath,
+      direction,
+      excludes,
+      sshOptions,
+      dryRun,
+      mode
+    );
+    const { stdout, stderr } = await execFileAsync("rsync", args, {
+      maxBuffer: 10 * 1024 * 1024,
+    });
+    return { output: stdout + (stderr ? `\n${stderr}` : "") };
+  } catch (error) {
+    return { output: "", error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+/**
  * 単一スコープの同期を実行
  */
 async function syncScope(
@@ -153,15 +187,47 @@ async function syncScope(
   scope: Exclude<DeployScope, "all" | "db">,
   direction: DeployDirection,
   dryRun: boolean,
-  mode: SyncMode = "mirror"
+  mode: SyncMode = "mirror",
+  selectedItems?: string[]
 ): Promise<SyncResult> {
   try {
     const relativePath = SCOPE_PATHS[scope];
-    const localPath = `${sitePath}/src/${relativePath}`;
-    const remotePath = buildRemotePath(target, relativePath);
     const sshOptions = buildSSHOptions(target);
     const excludes = [...DEFAULT_EXCLUDES, ...target.exclude];
 
+    // 選択アイテムが指定されている場合はアイテムごとに個別同期
+    if (selectedItems && selectedItems.length > 0) {
+      const outputs: string[] = [];
+      let firstError: string | undefined;
+
+      for (const item of selectedItems) {
+        const itemLocalPath = `${sitePath}/src/${relativePath}${item}/`;
+        const itemRemotePath = buildRemotePath(target, `${relativePath}${item}/`);
+        const result = await syncScopeItem(
+          itemLocalPath,
+          itemRemotePath,
+          direction,
+          excludes,
+          sshOptions,
+          dryRun,
+          mode
+        );
+        if (result.error) {
+          firstError = `[${item}] ${result.error}`;
+          break;
+        }
+        outputs.push(`--- ${item} ---\n${result.output}`);
+      }
+
+      if (firstError) {
+        return { success: false, scope, output: outputs.join("\n"), error: firstError };
+      }
+      return { success: true, scope, output: outputs.join("\n") };
+    }
+
+    // 選択なし → フォルダ全体を同期
+    const localPath = `${sitePath}/src/${relativePath}`;
+    const remotePath = buildRemotePath(target, relativePath);
     const args = buildRsyncArgs(
       localPath,
       remotePath,
@@ -197,7 +263,7 @@ async function syncScope(
  * 同期を実行
  */
 export async function executeSync(options: SyncOptions): Promise<SyncResult[]> {
-  const { sitePath, target, direction, scopes, dryRun = false, mode = "mirror" } = options;
+  const { sitePath, target, direction, scopes, dryRun = false, mode = "mirror", selectedItems } = options;
   const results: SyncResult[] = [];
 
   // "all" が含まれている場合は全スコープに展開（dbを除く）
@@ -212,7 +278,8 @@ export async function executeSync(options: SyncOptions): Promise<SyncResult[]> {
 
   // 各スコープを順番に同期
   for (const scope of targetScopes) {
-    const result = await syncScope(sitePath, target, scope, direction, dryRun, mode);
+    const scopeSelectedItems = selectedItems?.[scope];
+    const result = await syncScope(sitePath, target, scope, direction, dryRun, mode, scopeSelectedItems);
     results.push(result);
 
     // エラーが発生した場合は中断

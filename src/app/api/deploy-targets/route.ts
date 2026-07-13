@@ -36,6 +36,19 @@ interface CreateDeployTargetRequest {
     port: number;
     keyPath?: string;
   };
+  basicAuth?: {
+    user: string;
+    password: string;
+  };
+  monitoring?: {
+    enabled: boolean;
+    intervalMinutes: number;
+    thresholds: {
+      diskUsagePercent: number;
+      sslExpiryDays: number;
+      httpResponseMs: number;
+    };
+  };
   ftp?: {
     host: string;
     user: string;
@@ -111,6 +124,8 @@ export async function POST(request: NextRequest) {
       vhost: body.vhost,
       wordpressPath: body.wordpressPath,
       ssh: body.ssh,
+      basicAuth: body.basicAuth?.user ? body.basicAuth : undefined,
+      monitoring: body.monitoring,
       ftp: body.ftp,
       database: body.database,
       exclude: body.exclude || [],

@@ -4,74 +4,13 @@ import path from "path";
 import os from "os";
 import fs from "fs/promises";
 import { DeployTarget, DbSyncOptions, DbSyncResult, RemoteDbCapabilities, Site } from "@/types";
+import { shellEscape, expandKeyPath, executeRemoteCommand } from "./remote-exec";
 
 const execFileAsync = promisify(execFile);
 const execAsync = promisify(exec);
 
 // バックアップ保持数
 const MAX_BACKUPS = 5;
-
-/**
- * シェル用にシングルクォート内の文字列をエスケープ
- * シングルクォートを '\\'' に置換して安全に埋め込む
- */
-function shellEscape(str: string): string {
-  return "'" + str.replace(/'/g, "'\\''") + "'";
-}
-
-/**
- * SSH キーパスを展開（~ をホームディレクトリに置換）
- */
-function expandKeyPath(keyPath: string | undefined): string | undefined {
-  if (!keyPath) return undefined;
-  if (keyPath.startsWith("~/")) {
-    return path.join(os.homedir(), keyPath.slice(2));
-  }
-  return keyPath;
-}
-
-/**
- * SSHコマンドの引数を生成
- */
-function buildSSHArgs(target: DeployTarget): string[] {
-  if (!target.ssh) {
-    throw new Error("SSH設定がありません");
-  }
-
-  const { host, user, port } = target.ssh;
-  const keyPath = expandKeyPath(target.ssh.keyPath);
-
-  const args = [
-    "-o", "StrictHostKeyChecking=no",
-    "-o", "ConnectTimeout=30",
-    "-p", String(port),
-  ];
-
-  if (keyPath) {
-    args.push("-i", keyPath);
-  }
-
-  args.push(`${user}@${host}`);
-
-  return args;
-}
-
-/**
- * リモートでコマンドを実行
- */
-async function executeRemoteCommand(
-  target: DeployTarget,
-  command: string,
-  timeoutMs: number = 120000
-): Promise<{ stdout: string; stderr: string }> {
-  const sshArgs = buildSSHArgs(target);
-  sshArgs.push(command);
-
-  return execFileAsync("ssh", sshArgs, {
-    timeout: timeoutMs,
-    maxBuffer: 50 * 1024 * 1024, // 50MB
-  });
-}
 
 /**
  * リモートサーバーのDB操作能力を検出
@@ -138,7 +77,7 @@ export async function detectRemoteCapabilities(
 /**
  * MariaDB 11.4+ のサンドボックスモードコメントを除去
  */
-function sanitizeMariaDbDump(sql: string): string {
+export function sanitizeMariaDbDump(sql: string): string {
   // 1行目の /*999999\- enable the sandbox mode */ を削除
   return sql.replace(/^\/\*999999\\?-[^*]*\*\/\s*/m, "");
 }
@@ -267,7 +206,7 @@ async function searchReplaceLocal(
 /**
  * リモートDBをエクスポート
  */
-async function exportRemoteDb(
+export async function exportRemoteDb(
   target: DeployTarget,
   capabilities: RemoteDbCapabilities,
   outputPath: string,
@@ -336,7 +275,7 @@ async function exportRemoteDb(
 /**
  * リモートDBにインポート
  */
-async function importRemoteDb(
+export async function importRemoteDb(
   target: DeployTarget,
   capabilities: RemoteDbCapabilities,
   sqlPath: string

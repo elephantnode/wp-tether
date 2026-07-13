@@ -2,11 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import { existsSync } from "fs";
+import { getAppConfig } from "@/lib/app-config";
 
 const execFileAsync = promisify(execFile);
 
 /**
- * POST /api/open-terminal - ローカルフォルダをターミナルで開く
+ * POST /api/open-terminal - ローカルフォルダを設定済みターミナルで開く
  */
 export async function POST(request: NextRequest) {
   try {
@@ -20,7 +21,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // パスが存在するか確認
     if (!existsSync(path)) {
       return NextResponse.json(
         { error: "指定されたパスが存在しません" },
@@ -28,18 +28,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // OSに応じてコマンドを実行（execFileでシェルを経由せず安全に実行）
     const platform = process.platform;
 
     if (platform === "darwin") {
-      // macOS - デフォルトのターミナルで開く
-      await execFileAsync("open", ["-a", "Terminal", path]);
+      const config = await getAppConfig();
+      const terminalApp = config.terminalApp || "Terminal";
+      await execFileAsync("open", ["-a", terminalApp, path]);
     } else if (platform === "win32") {
-      // Windows - explorerでフォルダを開き、ユーザーがcmdを起動する想定
-      // cmd.exeを直接開くのはセキュリティ上避ける
       await execFileAsync("explorer", [path]);
     } else {
-      // Linux - gnome-terminalを使用
       await execFileAsync("gnome-terminal", ["--working-directory", path]);
     }
 

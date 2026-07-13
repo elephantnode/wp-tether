@@ -23,7 +23,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
-import { Loader2, Save, Package, Download, Upload, Database, Globe, Trash2, ChevronDown, FolderOpen } from "lucide-react";
+import { Loader2, Save, Package, Download, Upload, Database, Globe, Trash2, ChevronDown, FolderOpen, Terminal, Code2, Plus, Check, Bell, Send } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -60,9 +61,38 @@ export default function SettingsPage() {
   const [pathMessage, setPathMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [showMigrateDialog, setShowMigrateDialog] = useState(false);
 
+  // バックアップ保存先
+  const [backupDir, setBackupDir] = useState("");
+  const [resolvedBackupDir, setResolvedBackupDir] = useState("");
+  const [isSavingBackup, setIsSavingBackup] = useState(false);
+  const [isPickingBackupFolder, setIsPickingBackupFolder] = useState(false);
+  const [backupMessage, setBackupMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  // 通知設定
+  const [notifyMac, setNotifyMac] = useState(true);
+  const [notifySlack, setNotifySlack] = useState("");
+  const [notifyGChat, setNotifyGChat] = useState("");
+  const [notifyMinLevel, setNotifyMinLevel] = useState<"info" | "warning" | "critical">("warning");
+  const [isSavingNotify, setIsSavingNotify] = useState(false);
+  const [notifyMessage, setNotifyMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [testingChannel, setTestingChannel] = useState<string | null>(null);
+
+  // 外部アプリ設定
+  const [terminalApp, setTerminalApp] = useState("Terminal");
+  const [terminalApps, setTerminalApps] = useState<string[]>(["Terminal"]);
+  const [isPickingTerminal, setIsPickingTerminal] = useState(false);
+  const [editorApp, setEditorApp] = useState("Visual Studio Code");
+  const [editorApps, setEditorApps] = useState<string[]>(["Visual Studio Code"]);
+  const [isPickingEditor, setIsPickingEditor] = useState(false);
+  const [isSavingApps, setIsSavingApps] = useState(false);
+  const [appsMessage, setAppsMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
   // 展開状態
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
     appConfig: false,
+    backupConfig: false,
+    notifyConfig: false,
+    externalApps: false,
     data: false,
     plugins: false,
   });
@@ -79,9 +109,89 @@ export default function SettingsPage() {
         const data = await res.json();
         setDataDir(data.dataDir ?? "");
         setResolvedDataDir(data.resolvedDataDir ?? "");
+        setBackupDir(data.backupDir ?? "");
+        setResolvedBackupDir(data.resolvedBackupDir ?? "");
+
+        const n = data.notify ?? {};
+        setNotifyMac(n.macNotifications !== false);
+        setNotifySlack(n.slackWebhookUrl ?? "");
+        setNotifyGChat(n.googleChatWebhookUrl ?? "");
+        setNotifyMinLevel(n.minLevel ?? "warning");
+
+        const savedTerminal = data.terminalApp ?? "Terminal";
+        const savedTerminalApps: string[] = Array.isArray(data.terminalApps) && data.terminalApps.length
+          ? data.terminalApps
+          : [savedTerminal];
+        setTerminalApp(savedTerminal);
+        setTerminalApps(savedTerminalApps);
+
+        const savedEditor = data.editorApp ?? "Visual Studio Code";
+        const savedEditorApps: string[] = Array.isArray(data.editorApps) && data.editorApps.length
+          ? data.editorApps
+          : [savedEditor];
+        setEditorApp(savedEditor);
+        setEditorApps(savedEditorApps);
       }
     } catch (error) {
       console.error("Failed to fetch app config:", error);
+    }
+  }
+
+  async function pickAndAddApp(
+    apps: string[],
+    setApps: (v: string[]) => void,
+    activeApp: string,
+    setActive: (v: string) => void,
+    setIsPicking: (v: boolean) => void,
+  ) {
+    setIsPicking(true);
+    try {
+      const res = await fetch("/api/pick-app");
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.cancelled || !data.appName) return;
+      const name: string = data.appName;
+      if (apps.includes(name)) return;
+      const next = [...apps, name];
+      setApps(next);
+      if (!activeApp) setActive(name);
+    } catch {
+      // キャンセル等は無視
+    } finally {
+      setIsPicking(false);
+    }
+  }
+
+  function removeTerminalApp(name: string) {
+    const next = terminalApps.filter((a) => a !== name);
+    setTerminalApps(next);
+    if (terminalApp === name) setTerminalApp(next[0] ?? "");
+  }
+
+  function removeEditorApp(name: string) {
+    const next = editorApps.filter((a) => a !== name);
+    setEditorApps(next);
+    if (editorApp === name) setEditorApp(next[0] ?? "");
+  }
+
+  async function handleSaveApps() {
+    setIsSavingApps(true);
+    setAppsMessage(null);
+    try {
+      const res = await fetch("/api/app-config", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ terminalApp, terminalApps, editorApp, editorApps }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "保存に失敗しました");
+      }
+      setAppsMessage({ type: "success", text: "保存しました" });
+    } catch (error) {
+      setAppsMessage({ type: "error", text: error instanceof Error ? error.message : "保存に失敗しました" });
+    } finally {
+      setIsSavingApps(false);
     }
   }
 
@@ -132,6 +242,92 @@ export default function SettingsPage() {
       setPathMessage({ type: "error", text: error instanceof Error ? error.message : "保存に失敗しました" });
     } finally {
       setIsSavingPath(false);
+    }
+  }
+
+  async function handlePickBackupFolder() {
+    setIsPickingBackupFolder(true);
+    try {
+      const res = await fetch("/api/pick-folder");
+      if (res.ok) {
+        const data = await res.json();
+        if (!data.cancelled && data.path) {
+          setBackupDir(data.path);
+        }
+      }
+    } catch (error) {
+      console.error("Failed to pick folder:", error);
+    } finally {
+      setIsPickingBackupFolder(false);
+    }
+  }
+
+  async function saveBackupDir() {
+    setIsSavingBackup(true);
+    setBackupMessage(null);
+    try {
+      const res = await fetch("/api/app-config", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ backupDir }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "保存に失敗しました");
+      setBackupDir(data.backupDir ?? "");
+      setResolvedBackupDir(data.resolvedBackupDir ?? "");
+      setBackupMessage({ type: "success", text: "保存しました" });
+    } catch (error) {
+      setBackupMessage({ type: "error", text: error instanceof Error ? error.message : "保存に失敗しました" });
+    } finally {
+      setIsSavingBackup(false);
+    }
+  }
+
+  async function saveNotifyConfig() {
+    setIsSavingNotify(true);
+    setNotifyMessage(null);
+    try {
+      const res = await fetch("/api/app-config", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          notify: {
+            macNotifications: notifyMac,
+            slackWebhookUrl: notifySlack,
+            googleChatWebhookUrl: notifyGChat,
+            minLevel: notifyMinLevel,
+          },
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "保存に失敗しました");
+      setNotifyMessage({ type: "success", text: "保存しました" });
+    } catch (error) {
+      setNotifyMessage({ type: "error", text: error instanceof Error ? error.message : "保存に失敗しました" });
+    } finally {
+      setIsSavingNotify(false);
+    }
+  }
+
+  async function handleTestNotify(channel: "slack" | "google_chat" | "mac", webhookUrl?: string) {
+    setTestingChannel(channel);
+    setNotifyMessage(null);
+    try {
+      const res = await fetch("/api/notify/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ channel, webhookUrl }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setNotifyMessage({ type: "success", text: "テスト通知を送信しました" });
+      } else {
+        setNotifyMessage({ type: "error", text: data.error || "送信に失敗しました" });
+      }
+    } catch (error) {
+      setNotifyMessage({ type: "error", text: error instanceof Error ? error.message : "送信失敗" });
+    } finally {
+      setTestingChannel(null);
     }
   }
 
@@ -383,6 +579,357 @@ export default function SettingsPage() {
                   <li>例: <code className="bg-muted px-1 rounded">~/Dropbox/wp-tether</code></li>
                 </ul>
               </div>
+            </CardContent>
+          </CollapsibleContent>
+        </Card>
+      </Collapsible>
+
+      {/* バックアップ保存先設定 */}
+      <Collapsible open={openSections.backupConfig} onOpenChange={() => toggleSection("backupConfig")}>
+        <Card>
+          <CollapsibleTrigger asChild>
+            <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <FolderOpen className="w-5 h-5" />
+                  <div>
+                    <CardTitle className="text-base">バックアップ保存先</CardTitle>
+                    <CardDescription className="mt-1">
+                      サーバーから取得したファイル・DB の保存場所を指定
+                    </CardDescription>
+                  </div>
+                </div>
+                <ChevronDown
+                  className={`w-5 h-5 text-muted-foreground transition-transform ${
+                    openSections.backupConfig ? "rotate-180" : ""
+                  }`}
+                />
+              </div>
+            </CardHeader>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <CardContent className="space-y-4 pt-0">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">バックアップフォルダ</label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    placeholder="空欄 = デフォルト ({データフォルダ}/backups/servers)"
+                    value={backupDir}
+                    onChange={(e) => setBackupDir(e.target.value)}
+                    className="font-mono text-sm"
+                  />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handlePickBackupFolder}
+                    disabled={isPickingBackupFolder}
+                    title="フォルダを選択"
+                  >
+                    {isPickingBackupFolder ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <FolderOpen className="w-4 h-4" />
+                    )}
+                  </Button>
+                  <Button onClick={saveBackupDir} disabled={isSavingBackup} size="sm">
+                    {isSavingBackup ? (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    ) : (
+                      <Save className="w-4 h-4 mr-2" />
+                    )}
+                    保存
+                  </Button>
+                </div>
+                <div className="space-y-1 text-xs text-muted-foreground">
+                  <p>有効フォルダ: <code className="bg-muted px-1 rounded">{resolvedBackupDir || "（取得中）"}</code></p>
+                  <p className="text-muted-foreground/70">
+                    各サーバーのバックアップは <code className="bg-muted px-1 rounded">このフォルダ/サーバー名_ID/タイムスタンプ/</code> に保存されます
+                  </p>
+                </div>
+              </div>
+
+              {backupMessage && (
+                <div
+                  className={`p-3 rounded-md text-sm ${
+                    backupMessage.type === "success"
+                      ? "bg-green-50 dark:bg-green-950/30 text-green-800 dark:text-green-200"
+                      : "bg-red-50 dark:bg-red-950/30 text-red-800 dark:text-red-200"
+                  }`}
+                >
+                  {backupMessage.text}
+                </div>
+              )}
+
+              <div className="text-sm text-muted-foreground space-y-1">
+                <p className="font-medium">使い方:</p>
+                <ul className="list-disc list-inside space-y-1">
+                  <li>空欄にするとデフォルト（<code className="bg-muted px-1 rounded">データフォルダ/backups/servers</code>）を使用</li>
+                  <li>フォルダアイコンでネイティブダイアログから選択可能</li>
+                  <li>例: <code className="bg-muted px-1 rounded">~/Dropbox/wp-backups</code> や外付けドライブのパス</li>
+                </ul>
+              </div>
+            </CardContent>
+          </CollapsibleContent>
+        </Card>
+      </Collapsible>
+
+      {/* 通知設定 */}
+      <Collapsible open={openSections.notifyConfig} onOpenChange={() => toggleSection("notifyConfig")}>
+        <Card>
+          <CollapsibleTrigger asChild>
+            <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Bell className="w-5 h-5" />
+                  <div>
+                    <CardTitle className="text-base">通知設定</CardTitle>
+                    <CardDescription className="mt-1">
+                      Slack・Google Chat・macOS への通知チャネルを設定
+                    </CardDescription>
+                  </div>
+                </div>
+                <ChevronDown className={`w-5 h-5 text-muted-foreground transition-transform ${openSections.notifyConfig ? "rotate-180" : ""}`} />
+              </div>
+            </CardHeader>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <CardContent className="space-y-5 pt-0">
+
+              {/* 最低通知レベル */}
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">外部送信の最低レベル</label>
+                <Select value={notifyMinLevel} onValueChange={(v) => setNotifyMinLevel(v as typeof notifyMinLevel)}>
+                  <SelectTrigger className="w-48">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="info">INFO 以上（全て送信）</SelectItem>
+                    <SelectItem value="warning">WARNING 以上（推奨）</SelectItem>
+                    <SelectItem value="critical">CRITICAL のみ</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">アプリ内通知は常に全レベル記録されます</p>
+              </div>
+
+              {/* macOS */}
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium flex items-center gap-2">
+                  <Checkbox checked={notifyMac} onCheckedChange={(c) => setNotifyMac(!!c)} />
+                  macOS ネイティブ通知
+                </label>
+                {notifyMac && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={testingChannel === "mac"}
+                    onClick={() => handleTestNotify("mac")}
+                  >
+                    {testingChannel === "mac" ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <Send className="w-3.5 h-3.5 mr-1.5" />}
+                    テスト送信
+                  </Button>
+                )}
+              </div>
+
+              {/* Slack */}
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">Slack Incoming Webhook URL</label>
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="https://hooks.slack.com/services/..."
+                    value={notifySlack}
+                    onChange={(e) => setNotifySlack(e.target.value)}
+                    className="font-mono text-sm"
+                  />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={!notifySlack || testingChannel === "slack"}
+                    onClick={() => handleTestNotify("slack", notifySlack)}
+                  >
+                    {testingChannel === "slack" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">Slack アプリ管理 → Incoming Webhooks で取得</p>
+              </div>
+
+              {/* Google Chat */}
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">Google Chat Webhook URL</label>
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="https://chat.googleapis.com/v1/spaces/..."
+                    value={notifyGChat}
+                    onChange={(e) => setNotifyGChat(e.target.value)}
+                    className="font-mono text-sm"
+                  />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={!notifyGChat || testingChannel === "google_chat"}
+                    onClick={() => handleTestNotify("google_chat", notifyGChat)}
+                  >
+                    {testingChannel === "google_chat" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">スペース設定 → アプリと統合 → Webhook で取得</p>
+              </div>
+
+              {/* メッセージ */}
+              {notifyMessage && (
+                <div className={`p-3 rounded-md text-sm ${notifyMessage.type === "success" ? "bg-green-50 dark:bg-green-950/30 text-green-800 dark:text-green-200" : "bg-red-50 dark:bg-red-950/30 text-red-800 dark:text-red-200"}`}>
+                  {notifyMessage.text}
+                </div>
+              )}
+
+              <Button onClick={saveNotifyConfig} disabled={isSavingNotify} size="sm">
+                {isSavingNotify ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
+                保存
+              </Button>
+            </CardContent>
+          </CollapsibleContent>
+        </Card>
+      </Collapsible>
+
+      {/* 外部アプリ設定 */}
+      <Collapsible open={openSections.externalApps} onOpenChange={() => toggleSection("externalApps")}>
+        <Card>
+          <CollapsibleTrigger asChild>
+            <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Terminal className="w-5 h-5" />
+                  <div>
+                    <CardTitle className="text-base">外部アプリ設定</CardTitle>
+                    <CardDescription className="mt-1">
+                      サイトカードから開くターミナル・エディタを指定
+                    </CardDescription>
+                  </div>
+                </div>
+                <ChevronDown
+                  className={`w-5 h-5 text-muted-foreground transition-transform ${
+                    openSections.externalApps ? "rotate-180" : ""
+                  }`}
+                />
+              </div>
+            </CardHeader>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <CardContent className="space-y-6 pt-0">
+              {/* ターミナル */}
+              <div className="space-y-3">
+                <label className="text-sm font-medium flex items-center gap-2">
+                  <Terminal className="w-4 h-4" />
+                  ターミナル
+                </label>
+                <div className="space-y-1">
+                  {terminalApps.map((app) => (
+                    <div
+                      key={app}
+                      className={`flex items-center gap-2 px-3 py-2 rounded-md border cursor-pointer transition-colors ${
+                        terminalApp === app
+                          ? "border-primary bg-primary/5"
+                          : "border-border hover:bg-muted/50"
+                      }`}
+                      onClick={() => setTerminalApp(app)}
+                    >
+                      <div className={`w-4 h-4 flex items-center justify-center shrink-0 ${terminalApp === app ? "text-primary" : "text-transparent"}`}>
+                        <Check className="w-3.5 h-3.5" />
+                      </div>
+                      <span className="flex-1 text-sm font-mono">{app}</span>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); removeTerminalApp(app); }}
+                        className="text-muted-foreground hover:text-destructive transition-colors p-0.5 rounded"
+                        title="削除"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => pickAndAddApp(terminalApps, setTerminalApps, terminalApp, setTerminalApp, setIsPickingTerminal)}
+                  disabled={isPickingTerminal}
+                >
+                  {isPickingTerminal ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <Plus className="w-4 h-4 mr-2" />
+                  )}
+                  アプリを選択して追加
+                </Button>
+              </div>
+
+              {/* エディタ */}
+              <div className="space-y-3">
+                <label className="text-sm font-medium flex items-center gap-2">
+                  <Code2 className="w-4 h-4" />
+                  エディタ
+                </label>
+                <div className="space-y-1">
+                  {editorApps.map((app) => (
+                    <div
+                      key={app}
+                      className={`flex items-center gap-2 px-3 py-2 rounded-md border cursor-pointer transition-colors ${
+                        editorApp === app
+                          ? "border-primary bg-primary/5"
+                          : "border-border hover:bg-muted/50"
+                      }`}
+                      onClick={() => setEditorApp(app)}
+                    >
+                      <div className={`w-4 h-4 flex items-center justify-center shrink-0 ${editorApp === app ? "text-primary" : "text-transparent"}`}>
+                        <Check className="w-3.5 h-3.5" />
+                      </div>
+                      <span className="flex-1 text-sm font-mono">{app}</span>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); removeEditorApp(app); }}
+                        className="text-muted-foreground hover:text-destructive transition-colors p-0.5 rounded"
+                        title="削除"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => pickAndAddApp(editorApps, setEditorApps, editorApp, setEditorApp, setIsPickingEditor)}
+                  disabled={isPickingEditor}
+                >
+                  {isPickingEditor ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <Plus className="w-4 h-4 mr-2" />
+                  )}
+                  アプリを選択して追加
+                </Button>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <Button onClick={handleSaveApps} disabled={isSavingApps} size="sm">
+                  {isSavingApps ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <Save className="w-4 h-4 mr-2" />
+                  )}
+                  保存
+                </Button>
+                {appsMessage && (
+                  <span
+                    className={`text-sm ${
+                      appsMessage.type === "success" ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"
+                    }`}
+                  >
+                    {appsMessage.text}
+                  </span>
+                )}
+              </div>
+
+              <p className="text-xs text-muted-foreground">
+                macOS の <code className="bg-muted px-1 rounded">open -a [アプリ名]</code> コマンドで起動します。アプリ名はアプリケーションフォルダに表示される名前を入力してください。
+              </p>
             </CardContent>
           </CollapsibleContent>
         </Card>

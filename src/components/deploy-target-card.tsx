@@ -28,6 +28,8 @@ import {
   Wifi,
   Pencil,
   Database,
+  Globe,
+  LayoutDashboard,
 } from "lucide-react";
 import { SyncDialog } from "./sync-dialog";
 import { DbSyncDialog } from "./db-sync-dialog";
@@ -104,15 +106,28 @@ export function DeployTargetCard({ target, sitePath, siteStatus }: DeployTargetC
             <CardTitle className="text-lg">{target.name}</CardTitle>
             <Badge variant="outline">{target.type.toUpperCase()}</Badge>
           </div>
-          <a
-            href={target.vhost}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-sm text-muted-foreground hover:underline hover:text-foreground flex items-center gap-1"
-          >
-            {target.vhost}
-            <ExternalLink className="w-3 h-3" />
-          </a>
+          <div className="flex flex-col gap-1">
+            <a
+              href={target.vhost}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sm text-muted-foreground hover:underline hover:text-foreground flex items-center gap-1"
+            >
+              <Globe className="w-3 h-3 shrink-0" />
+              <span className="truncate">{target.vhost}</span>
+              <ExternalLink className="w-3 h-3 shrink-0" />
+            </a>
+            <a
+              href={`${target.vhost.replace(/\/$/, "")}/wp-admin/`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sm text-muted-foreground hover:underline hover:text-foreground flex items-center gap-1"
+            >
+              <LayoutDashboard className="w-3 h-3 shrink-0" />
+              <span className="truncate">管理画面</span>
+              <ExternalLink className="w-3 h-3 shrink-0" />
+            </a>
+          </div>
         </CardHeader>
 
         <CardContent className="text-sm space-y-2">

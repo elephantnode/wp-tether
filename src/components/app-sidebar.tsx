@@ -21,6 +21,8 @@ import {
   Plus,
   Container,
   HelpCircle,
+  Server,
+  Network,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -39,6 +41,16 @@ const navItems = [
     title: "デプロイ",
     href: "/deploy",
     icon: Rocket,
+  },
+  {
+    title: "サーバー",
+    href: "/servers",
+    icon: Server,
+  },
+  {
+    title: "hosts 管理",
+    href: "/hosts",
+    icon: Network,
   },
   {
     title: "設定",

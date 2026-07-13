@@ -65,9 +65,17 @@ export interface SiteConfig {
 // ===========================================
 export interface DeployTarget {
   id: string;
-  siteId: string;
+  /** 紐づくローカルサイトID。保守専用の外部サーバーの場合は未設定 */
+  siteId?: string;
   name: string; // e.g., "staging", "production"
   type: "ssh" | "sftp" | "ftp";
+
+  /** 保守対象サーバーとして監視・メンテ機能の対象にするか */
+  managed?: boolean;
+  /** サーバーのグルーピング/環境ラベル（例: "production", "client-a"） */
+  tags?: string[];
+  /** 監視設定（未設定なら監視しない） */
+  monitoring?: MonitoringConfig;
 
   vhost: string; // e.g., "https://staging.example.com"
   wordpressPath: string; // e.g., "/var/www/html"
@@ -87,6 +95,12 @@ export interface DeployTarget {
     keyPath?: string;
   };
 
+  /** HTTP稼働チェック等で使う Basic 認証（サイトに BASIC 認証がかかっている場合） */
+  basicAuth?: {
+    user: string;
+    password: string;
+  };
+
   ftp?: {
     host: string;
     user: string;
@@ -102,6 +116,117 @@ export interface DeployTarget {
     available: boolean;
     path?: string; // 例: /usr/local/bin/wp
   };
+}
+
+// ===========================================
+// サーバー監視・ヘルスチェック
+// ===========================================
+
+/** 監視のしきい値設定 */
+export interface MonitoringThresholds {
+  /** ディスク使用率の警告しきい値（%） */
+  diskUsagePercent: number;
+  /** SSL証明書 残り日数の警告しきい値（日） */
+  sslExpiryDays: number;
+  /** HTTP応答時間の警告しきい値（ミリ秒） */
+  httpResponseMs: number;
+}
+
+/** 監視設定（DeployTarget に紐づく） */
+export interface MonitoringConfig {
+  enabled: boolean;
+  /** チェック間隔（分） */
+  intervalMinutes: number;
+  thresholds: MonitoringThresholds;
+}
+
+export const DEFAULT_MONITORING_THRESHOLDS: MonitoringThresholds = {
+  diskUsagePercent: 85,
+  sslExpiryDays: 14,
+  httpResponseMs: 3000,
+};
+
+/** 個別チェックのステータス */
+export type HealthStatus = "ok" | "warning" | "critical" | "unknown";
+
+/** HTTP稼働チェック結果 */
+export interface HttpCheckResult {
+  status: HealthStatus;
+  /** HTTPステータスコード */
+  statusCode?: number;
+  /** 応答時間（ミリ秒） */
+  responseMs?: number;
+  /** 最終的なURL（リダイレクト後） */
+  finalUrl?: string;
+  message?: string;
+}
+
+/** SSL証明書チェック結果 */
+export interface SslCheckResult {
+  status: HealthStatus;
+  /** 有効期限（ISO 8601） */
+  validTo?: string;
+  /** 残り日数 */
+  daysRemaining?: number;
+  /** 発行者 */
+  issuer?: string;
+  message?: string;
+}
+
+/** ディスク使用率チェック結果 */
+export interface DiskCheckResult {
+  status: HealthStatus;
+  /** 使用率（%） */
+  usagePercent?: number;
+  /** 使用量（人間可読、例: "12G"） */
+  used?: string;
+  /** 全容量（人間可読） */
+  total?: string;
+  /** マウントポイント */
+  mount?: string;
+  message?: string;
+}
+
+/** リソース（メモリ/ロード）チェック結果 */
+export interface ResourceCheckResult {
+  status: HealthStatus;
+  /** メモリ使用率（%） */
+  memoryUsagePercent?: number;
+  /** ロードアベレージ（1分） */
+  load1?: number;
+  /** CPUコア数 */
+  cpuCores?: number;
+  message?: string;
+}
+
+/** WordPress ヘルス/更新チェック結果 */
+export interface WpHealthCheckResult {
+  status: HealthStatus;
+  /** WordPress コアバージョン */
+  coreVersion?: string;
+  /** コア更新が利用可能か */
+  coreUpdateAvailable?: boolean;
+  /** 更新可能なプラグイン数 */
+  pluginUpdates?: number;
+  /** 更新可能なテーマ数 */
+  themeUpdates?: number;
+  /** 期限超過の cron イベント数 */
+  overdueCron?: number;
+  message?: string;
+}
+
+/** 1サーバーのヘルスチェック総合結果 */
+export interface ServerHealthResult {
+  targetId: string;
+  /** チェック実行日時（ISO 8601） */
+  checkedAt: string;
+  /** 全チェックを総合したステータス */
+  overall: HealthStatus;
+  http: HttpCheckResult;
+  ssl: SslCheckResult;
+  disk: DiskCheckResult;
+  resource: ResourceCheckResult;
+  wp: WpHealthCheckResult;
 }
 
 // ===========================================
@@ -375,4 +500,179 @@ export interface SecurityWpConfigResult {
   skippedReason?: string;
   /** 各設定のチェック結果 */
   items: SecurityWpConfigCheck[];
+}
+
+// ===========================================
+// リモートサーバー向けセキュリティチェック
+// ===========================================
+
+/** WP-CLI verify-checksums の結果（コア/プラグイン） */
+export interface ChecksumVerifyResult {
+  /** チェックが実行されたか */
+  checked: boolean;
+  /** 未実行理由 */
+  skippedReason?: string;
+  /** 改ざん/不一致が検出されたか */
+  hasMismatch: boolean;
+  /** 不一致の詳細（ファイルパスやプラグイン名） */
+  mismatches: string[];
+}
+
+/** ファイル権限監査の結果 */
+export interface FilePermissionAuditResult {
+  /** チェックが実行されたか */
+  checked: boolean;
+  /** 未実行理由 */
+  skippedReason?: string;
+  /** wp-config.php の権限（例: "640"） */
+  wpConfigPerms?: string;
+  /** wp-config.php の権限が緩すぎるか（group/other に書き込み or other に読み取り可） */
+  wpConfigTooOpen?: boolean;
+  /** 誰でも書き込み可能なファイル数（wp-content 配下） */
+  worldWritableCount?: number;
+  /** 代表的な world-writable ファイル（最大20件） */
+  worldWritableSamples: string[];
+}
+
+// ===========================================
+// ローカルバックアップ（ファイル + DB を管理者ローカルへ世代保存）
+// ===========================================
+
+/** バックアップ対象のファイルスコープ */
+export type BackupFileScope = "uploads" | "plugins" | "themes" | "languages";
+
+/** バックアップ取得オプション */
+export interface LocalBackupOptions {
+  /** 取得するファイルスコープ */
+  fileScopes: BackupFileScope[];
+  /** wp-config.php を含めるか */
+  includeWpConfig: boolean;
+  /** DB を含めるか */
+  includeDb: boolean;
+  /** DB のユーザーテーブルを除外するか */
+  excludeUsers?: boolean;
+}
+
+/** 1世代分のバックアップ情報（manifest.json と一致） */
+export interface BackupGeneration {
+  /** 世代ID（タイムスタンプ: YYYYMMDD_HHMMSS） */
+  id: string;
+  createdAt: string;
+  targetId: string;
+  targetName: string;
+  fileScopes: BackupFileScope[];
+  hasWpConfig: boolean;
+  hasDb: boolean;
+  /** 合計サイズ（バイト） */
+  totalBytes: number;
+  /** 構成要素ごとのサイズ */
+  sizes: Record<string, number>;
+}
+
+/** バックアップ実行結果 */
+export interface LocalBackupResult {
+  success: boolean;
+  generation?: BackupGeneration;
+  output: string;
+  error?: string;
+}
+
+/** 復元オプション */
+export interface BackupRestoreOptions {
+  generationId: string;
+  /** 復元するファイルスコープ */
+  fileScopes: BackupFileScope[];
+  /** DB を復元するか */
+  restoreDb: boolean;
+  /** ファイル復元モード（mirror=削除含む / additive=追加更新のみ） */
+  mode: SyncMode;
+}
+
+// ===========================================
+// リモートメンテナンス（更新・WP-CLI）
+// ===========================================
+
+/** 更新可能な1項目 */
+export interface UpdateItem {
+  type: "core" | "plugin" | "theme";
+  name: string;
+  currentVersion?: string;
+  newVersion?: string;
+}
+
+/** 更新プレビュー結果 */
+export interface UpdatePreview {
+  coreUpdate?: { current: string; latest: string };
+  plugins: UpdateItem[];
+  themes: UpdateItem[];
+  translations: number;
+}
+
+/** メンテナンス操作の種別 */
+export type MaintenanceAction =
+  | "update-core"
+  | "update-plugins"
+  | "update-themes"
+  | "update-translations"
+  | "update-all";
+
+/** メンテナンス実行結果 */
+export interface MaintenanceResult {
+  success: boolean;
+  backupPath?: string;
+  output: string;
+  error?: string;
+}
+
+// ===========================================
+// リモートログ・cron
+// ===========================================
+
+/** 取得可能なログ種別 */
+export type RemoteLogType = "debug" | "php-error";
+
+/** リモートログ取得結果 */
+export interface RemoteLogResult {
+  type: RemoteLogType;
+  /** ログファイルのパス（解決できた場合） */
+  path?: string;
+  /** ログ本文（tail） */
+  content: string;
+  /** ログが見つからない等の理由 */
+  message?: string;
+}
+
+/** WP-Cron イベント1件 */
+export interface CronEvent {
+  hook: string;
+  /** 次回実行（相対表現、例: "5 mins"） */
+  nextRunRelative?: string;
+  /** 次回実行（GMT文字列） */
+  nextRunGmt?: string;
+  /** 期限超過か */
+  overdue: boolean;
+  schedule?: string;
+}
+
+/** cron 一覧結果 */
+export interface CronListResult {
+  events: CronEvent[];
+  overdueCount: number;
+}
+
+/** リモートサーバーのセキュリティスキャン総合結果 */
+export interface RemoteSecurityScanResult {
+  targetId: string;
+  scannedAt: string;
+  version: SecurityVersionInfo;
+  versionSkippedReason?: string;
+  vulnerabilityChecks: SecurityVulnerabilityCheck[];
+  fileScan: SecurityFileScanResult;
+  coreChecksum: ChecksumVerifyResult;
+  pluginChecksum: ChecksumVerifyResult;
+  filePermissions: FilePermissionAuditResult;
+  securityHeaders?: SecurityHeadersResult;
+  exposureChecks?: SecurityExposureResult;
+  wpConfigChecks?: SecurityWpConfigResult;
+  recommendations: SecurityRecommendation[];
 }
