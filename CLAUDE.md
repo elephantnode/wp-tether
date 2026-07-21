@@ -37,7 +37,23 @@ npm run lint     # ESLint実行
 - 定期実行: `src/instrumentation.ts` + `src/lib/scheduler.ts`（setInterval。監視有効サーバーを間隔ごとにチェック、状態変化時のみ通知、1日1回DBバックアップ）
 - 通知: `src/lib/notify.ts`（macOS通知 / Webhook / アプリ内 data/notifications.json）
 - 資格情報暗号化: `src/lib/secrets.ts`（AES-256-GCM、鍵は `~/.wp-tether/secret.key`。deploy-targets.json のDB/FTPパスワードを暗号化保存。平文値も後方互換で読める）
-- `DeployTarget.siteId` は任意（保守専用の外部サーバーはサイト未紐付けで登録可）
+
+#### サーバー登録の2経路
+`DeployTarget` は「サイト紐付けデプロイターゲット」と「保守専用サーバー」を兼ねる。
+
+| | サイト紐付け | 保守専用 |
+|---|---|---|
+| 登録UI | `/deploy/new` | `/servers/new`（`src/components/server-form.tsx`） |
+| API | `POST /api/deploy-targets` | `POST /api/servers` |
+| `siteId` | 必須 | 無し |
+| `database` / `exclude` | 有り | 無し |
+| 使える機能 | デプロイ + 保守 | 保守のみ |
+
+- `siteId` / `database` / `exclude` は全て optional。保守専用サーバーでは未設定のまま保持する（`[]` や `{}` を作らない）
+- `database` を使うのは全て WP-CLI 不在時のフォールバック分岐。`db-sync.ts` の `requireDatabase()` で明示エラーにする
+- `/servers` の一覧・scheduler の絞り込みは `type === "ssh"` で行う。**`managed` では絞らない**（既存ターゲットが監視から消えるため）。`managed` は表示用
+- 監視設定フォームは `src/components/monitoring-fields.tsx` に共通化（スキーマ断片・既定値・`MonitoringConfig` 組み立てを集約）
+- `db-sync` / `db-backups` / `restore` は `siteId` 必須。保守専用サーバーには 400 を返す（保守側のバックアップは `remote-ops.ts` の `$HOME/wp-tether-maintenance-backups/{name}` 系統）
 
 ## 注意点
 
@@ -62,3 +78,4 @@ npm run lint     # ESLint実行
 - rsyncファイル同期（Push/Pull、除外パターンUI）
 - DB同期（Push/Pull、URL置換、ユーザー除外オプション）
 - サーバー保守（監視・セキュリティ・更新メンテ・ログ/Cron・定期バックアップ・通知）
+- 保守専用サーバー登録（ローカル開発環境なしで外部サーバーを保守対象に追加）
