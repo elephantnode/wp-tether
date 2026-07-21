@@ -279,30 +279,61 @@ export async function checkWp(target: DeployTarget): Promise<WpHealthCheckResult
   }
 
   const wp = target.wpCli?.path || "wp";
+  // 各サブコマンドは stderr を握り潰さず、そのセクションに取り込む
+  // （握り潰すと権限エラー等が「Command failed: ssh ...」としか出ない）
   const command =
-    `cd ${shellEscape(target.wordpressPath)} && ` +
+    // cd 失敗時に後続の wp がホームディレクトリで走らないよう、ここで打ち切る
+    `cd ${shellEscape(target.wordpressPath)} 2>&1 || { echo '===FATAL==='; exit 0; }; ` +
     [
       `echo '===VERSION==='`,
-      `${wp} core version 2>/dev/null`,
+      `${wp} core version 2>&1`,
       `echo '===COREUPDATE==='`,
-      `${wp} core check-update --format=count 2>/dev/null`,
+      `${wp} core check-update --format=count 2>&1`,
       `echo '===PLUGINS==='`,
-      `${wp} plugin list --update=available --format=count 2>/dev/null`,
+      `${wp} plugin list --update=available --format=count 2>&1`,
       `echo '===THEMES==='`,
-      `${wp} theme list --update=available --format=count 2>/dev/null`,
+      `${wp} theme list --update=available --format=count 2>&1`,
       `echo '===CRON==='`,
-      `${wp} cron event list --format=json 2>/dev/null`,
-    ].join("; ");
+      `${wp} cron event list --format=json 2>&1`,
+    ].join("; ") +
+    // 最後のコマンドの終了コードで連鎖全体が失敗し、取得済みの結果まで
+    // 捨てられるのを防ぐ
+    `; exit 0`;
 
   try {
     const { stdout } = await executeRemoteCommand(target, command, 60000);
     return parseWp(stdout);
   } catch (error) {
+    // 非ゼロ終了でも stdout が取れていれば、部分的な結果を活かす
+    const stdout = (error as { stdout?: string })?.stdout;
+    if (stdout && stdout.includes("===VERSION===")) {
+      return parseWp(stdout);
+    }
     return {
       status: "unknown",
       message: error instanceof Error ? error.message : "WPチェック失敗",
     };
   }
+}
+
+/**
+ * セクションの内容がエラー出力なら、その要点を返す（正常なら null）
+ */
+function sectionError(raw: string | undefined): string | null {
+  const text = (raw ?? "").trim();
+  if (!text) return null;
+  const isError =
+    /^(PHP\s+)?(Warning|Notice|Fatal error|Error|Parse error)\s*:/im.test(text) ||
+    /command not found|No such file or directory|Permission denied/i.test(text);
+  if (!isError) return null;
+
+  const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+  // "Error: ..." を最優先、無ければ最初の行
+  const primary =
+    lines.find((l) => /^Error\s*:/i.test(l)) ??
+    lines.find((l) => /command not found|Permission denied|No such file/i.test(l)) ??
+    lines[0];
+  return primary.replace(/\s+/g, " ").slice(0, 200);
 }
 
 function parseWp(stdout: string): WpHealthCheckResult {
@@ -318,9 +349,42 @@ function parseWp(stdout: string): WpHealthCheckResult {
     }
   }
 
+  // cd 失敗（wordpressPath の誤り）
+  if ("FATAL" in sections) {
+    return {
+      status: "unknown",
+      message: "WordPressパスにアクセスできません（設定を確認してください）",
+    };
+  }
+
   const result: WpHealthCheckResult = { status: "ok" };
+
+  // バージョンが取れない = WP-CLI が WordPress をブートストラップできていない。
+  // 権限エラー等の実際の理由をそのまま見せる。
+  const versionError = sectionError(sections.VERSION);
   const coreVersion = (sections.VERSION || "").trim();
-  if (coreVersion) result.coreVersion = coreVersion;
+  if (versionError || !/^\d+\.\d+/.test(coreVersion)) {
+    return {
+      status: "unknown",
+      message: versionError ?? "WP-CLIの実行に失敗しました",
+    };
+  }
+  result.coreVersion = coreVersion;
+
+  // バージョンは取れたが個別コマンドが失敗しているケース
+  // （例: wp-config.php が読めずDB接続を伴うコマンドだけ落ちる）
+  const detailError =
+    sectionError(sections.COREUPDATE) ??
+    sectionError(sections.PLUGINS) ??
+    sectionError(sections.THEMES) ??
+    sectionError(sections.CRON);
+  if (detailError) {
+    return {
+      status: "warning",
+      coreVersion,
+      message: `更新情報を取得できません: ${detailError}`,
+    };
+  }
 
   const coreUpdateCount = parseInt((sections.COREUPDATE || "").trim(), 10);
   result.coreUpdateAvailable = !isNaN(coreUpdateCount) && coreUpdateCount > 0;
