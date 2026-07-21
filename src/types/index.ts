@@ -80,7 +80,8 @@ export interface DeployTarget {
   vhost: string; // e.g., "https://staging.example.com"
   wordpressPath: string; // e.g., "/var/www/html"
 
-  database: {
+  /** デプロイ(DB同期)用の接続情報。保守専用サーバーでは未設定 */
+  database?: {
     name: string;
     user: string;
     password: string;
@@ -109,7 +110,8 @@ export interface DeployTarget {
     passive: boolean;
   };
 
-  exclude: string[]; // rsync除外パターン
+  /** rsync除外パターン。保守専用サーバーでは未設定 */
+  exclude?: string[];
 
   /** リモートのWP-CLI設定（検出結果をキャッシュ） */
   wpCli?: {

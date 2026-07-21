@@ -130,10 +130,10 @@ export default function EditDeployTargetPage() {
           monitoringDiskPercent: t.monitoring?.thresholds?.diskUsagePercent ?? DEFAULT_MONITORING_THRESHOLDS.diskUsagePercent,
           monitoringSslDays: t.monitoring?.thresholds?.sslExpiryDays ?? DEFAULT_MONITORING_THRESHOLDS.sslExpiryDays,
           monitoringHttpMs: t.monitoring?.thresholds?.httpResponseMs ?? DEFAULT_MONITORING_THRESHOLDS.httpResponseMs,
-          dbHost: t.database.host,
-          dbName: t.database.name,
-          dbUser: t.database.user,
-          dbPassword: t.database.password || "",
+          dbHost: t.database?.host ?? "localhost",
+          dbName: t.database?.name ?? "",
+          dbUser: t.database?.user ?? "",
+          dbPassword: t.database?.password ?? "",
           exclude: t.exclude?.join("\n") || "",
         });
       } catch (error) {

@@ -193,7 +193,7 @@ async function syncScope(
   try {
     const relativePath = SCOPE_PATHS[scope];
     const sshOptions = buildSSHOptions(target);
-    const excludes = [...DEFAULT_EXCLUDES, ...target.exclude];
+    const excludes = [...DEFAULT_EXCLUDES, ...(target.exclude ?? [])];
 
     // 選択アイテムが指定されている場合はアイテムごとに個別同期
     if (selectedItems && selectedItems.length > 0) {

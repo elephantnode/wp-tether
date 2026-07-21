@@ -13,6 +13,19 @@ const execAsync = promisify(exec);
 const MAX_BACKUPS = 5;
 
 /**
+ * DB接続情報を要求する。保守専用サーバー（DB情報なし）で
+ * WP-CLI が使えない場合のみここに到達する。
+ */
+function requireDatabase(target: DeployTarget): NonNullable<DeployTarget["database"]> {
+  if (!target.database) {
+    throw new Error(
+      "このサーバーにはDB接続情報が登録されていません。リモートにWP-CLIが必要です。"
+    );
+  }
+  return target.database;
+}
+
+/**
  * リモートサーバーのDB操作能力を検出
  */
 export async function detectRemoteCapabilities(
@@ -55,16 +68,19 @@ export async function detectRemoteCapabilities(
       capabilities.hasMariadbDump = true;
     }
 
-    // DB種別の検出
-    const dbVersionResult = await executeRemoteCommand(
-      target,
-      `mysql -h ${shellEscape(target.database.host)} -u ${shellEscape(target.database.user)} -p${shellEscape(target.database.password)} -e "SELECT VERSION();" 2>/dev/null || echo ''`
-    );
-    const versionOutput = dbVersionResult.stdout.toLowerCase();
-    if (versionOutput.includes("mariadb")) {
-      capabilities.dbType = "mariadb";
-    } else if (versionOutput.includes("mysql") || /\d+\.\d+\.\d+/.test(versionOutput)) {
-      capabilities.dbType = "mysql";
+    // DB種別の検出（DB接続情報がある場合のみ。無ければ dbType は "unknown" のまま）
+    if (target.database) {
+      const db = target.database;
+      const dbVersionResult = await executeRemoteCommand(
+        target,
+        `mysql -h ${shellEscape(db.host)} -u ${shellEscape(db.user)} -p${shellEscape(db.password)} -e "SELECT VERSION();" 2>/dev/null || echo ''`
+      );
+      const versionOutput = dbVersionResult.stdout.toLowerCase();
+      if (versionOutput.includes("mariadb")) {
+        capabilities.dbType = "mariadb";
+      } else if (versionOutput.includes("mysql") || /\d+\.\d+\.\d+/.test(versionOutput)) {
+        capabilities.dbType = "mysql";
+      }
     }
   } catch (error) {
     // エラーは無視して、検出できた分だけ返す
@@ -213,7 +229,7 @@ export async function exportRemoteDb(
   excludeUsers: boolean
 ): Promise<void> {
   let command: string;
-  const { database, wordpressPath } = target;
+  const { wordpressPath } = target;
   const tempFile = "/tmp/wp-tether-db-export.sql";
 
   if (capabilities.hasWpCli) {
@@ -236,12 +252,14 @@ export async function exportRemoteDb(
     }
   } else if (capabilities.hasMariadbDump) {
     // mariadb-dumpを使用
+    const database = requireDatabase(target);
     const ignoreTables = excludeUsers
       ? `--ignore-table=${shellEscape(database.name)}.wp_users --ignore-table=${shellEscape(database.name)}.wp_usermeta`
       : "";
     command = `mariadb-dump -h ${shellEscape(database.host)} -u ${shellEscape(database.user)} -p${shellEscape(database.password)} ${ignoreTables} ${shellEscape(database.name)} > ${tempFile}`;
   } else if (capabilities.hasMysqldump) {
     // mysqldumpを使用
+    const database = requireDatabase(target);
     const ignoreTables = excludeUsers
       ? `--ignore-table=${shellEscape(database.name)}.wp_users --ignore-table=${shellEscape(database.name)}.wp_usermeta`
       : "";
@@ -280,7 +298,7 @@ export async function importRemoteDb(
   capabilities: RemoteDbCapabilities,
   sqlPath: string
 ): Promise<void> {
-  const { database, wordpressPath } = target;
+  const { wordpressPath } = target;
   const tempFile = "/tmp/wp-tether-db-import.sql";
 
   // SCPでリモートにアップロード
@@ -305,6 +323,7 @@ export async function importRemoteDb(
     const wpPath = capabilities.wpCliPath || "wp";
     command = `cd ${shellEscape(wordpressPath)} && ${wpPath} db import ${tempFile}`;
   } else {
+    const database = requireDatabase(target);
     command = `mysql -h ${shellEscape(database.host)} -u ${shellEscape(database.user)} -p${shellEscape(database.password)} ${shellEscape(database.name)} < ${tempFile}`;
   }
 
@@ -392,9 +411,11 @@ async function backupRemoteDb(
     const wpPath = capabilities.wpCliPath || "wp";
     command = `cd ${shellEscape(wordpressPath)} && ${wpPath} db export ${shellEscape(backupPath)}`;
   } else if (capabilities.hasMariadbDump) {
-    command = `mariadb-dump -h ${shellEscape(target.database.host)} -u ${shellEscape(target.database.user)} -p${shellEscape(target.database.password)} ${shellEscape(target.database.name)} > ${shellEscape(backupPath)}`;
+    const db = requireDatabase(target);
+    command = `mariadb-dump -h ${shellEscape(db.host)} -u ${shellEscape(db.user)} -p${shellEscape(db.password)} ${shellEscape(db.name)} > ${shellEscape(backupPath)}`;
   } else if (capabilities.hasMysqldump) {
-    command = `mysqldump -h ${shellEscape(target.database.host)} -u ${shellEscape(target.database.user)} -p${shellEscape(target.database.password)} ${shellEscape(target.database.name)} > ${shellEscape(backupPath)}`;
+    const db = requireDatabase(target);
+    command = `mysqldump -h ${shellEscape(db.host)} -u ${shellEscape(db.user)} -p${shellEscape(db.password)} ${shellEscape(db.name)} > ${shellEscape(backupPath)}`;
   } else {
     throw new Error("バックアップを作成できるツールがありません");
   }
@@ -635,7 +656,8 @@ export async function restoreRemoteBackup(
       const wpPath = capabilities.wpCliPath || "wp";
       command = `cd ${shellEscape(wordpressPath)} && ${wpPath} db import ${shellEscape(backupPath)}`;
     } else {
-      command = `mysql -h ${shellEscape(target.database.host)} -u ${shellEscape(target.database.user)} -p${shellEscape(target.database.password)} ${shellEscape(target.database.name)} < ${shellEscape(backupPath)}`;
+      const db = requireDatabase(target);
+      command = `mysql -h ${shellEscape(db.host)} -u ${shellEscape(db.user)} -p${shellEscape(db.password)} ${shellEscape(db.name)} < ${shellEscape(backupPath)}`;
     }
 
     await executeRemoteCommand(target, command, 300000);

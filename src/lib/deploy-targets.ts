@@ -12,10 +12,10 @@ interface DeployTargetsData {
  * 保存用に資格情報を暗号化したコピーを返す
  */
 function encryptTargetSecrets(target: DeployTarget): DeployTarget {
-  const copy: DeployTarget = {
-    ...target,
-    database: { ...target.database, password: encryptSecret(target.database.password) },
-  };
+  const copy: DeployTarget = { ...target };
+  if (target.database) {
+    copy.database = { ...target.database, password: encryptSecret(target.database.password) };
+  }
   if (target.ftp) {
     copy.ftp = { ...target.ftp, password: encryptSecret(target.ftp.password) };
   }
@@ -29,10 +29,10 @@ function encryptTargetSecrets(target: DeployTarget): DeployTarget {
  * 読み込み用に資格情報を復号したコピーを返す（平文値はそのまま）
  */
 function decryptTargetSecrets(target: DeployTarget): DeployTarget {
-  const copy: DeployTarget = {
-    ...target,
-    database: { ...target.database, password: decryptSecret(target.database.password) },
-  };
+  const copy: DeployTarget = { ...target };
+  if (target.database) {
+    copy.database = { ...target.database, password: decryptSecret(target.database.password) };
+  }
   if (target.ftp) {
     copy.ftp = { ...target.ftp, password: decryptSecret(target.ftp.password) };
   }
@@ -50,12 +50,24 @@ export async function getDeployTargets(siteId?: string): Promise<DeployTarget[]>
     const file = await resolveDeployTargetsJsonPath();
     const content = await fs.readFile(file, "utf-8");
     const data: DeployTargetsData = JSON.parse(content);
-    const targets = data.targets.map(decryptTargetSecrets);
+    // 1件の復号失敗で全ターゲットを失わないよう、1件単位で握る
+    const targets = data.targets.flatMap((t) => {
+      try {
+        return [decryptTargetSecrets(t)];
+      } catch (error) {
+        console.error(`Failed to decrypt deploy target ${t.id}:`, error);
+        return [];
+      }
+    });
     if (siteId) {
       return targets.filter((t) => t.siteId === siteId);
     }
     return targets;
-  } catch {
+  } catch (error) {
+    // ファイル未作成は正常系。それ以外（JSON破損など）は握り潰さず記録する
+    if ((error as NodeJS.ErrnoException)?.code !== "ENOENT") {
+      console.error("Failed to read deploy targets:", error);
+    }
     return [];
   }
 }
