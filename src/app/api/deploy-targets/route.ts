@@ -25,8 +25,11 @@ export async function GET(request: NextRequest) {
 }
 
 interface CreateDeployTargetRequest {
-  siteId: string;
+  /** 紐づくローカルサイトID。保守専用サーバーの場合は未指定 */
+  siteId?: string;
   name: string;
+  managed?: boolean;
+  tags?: string[];
   type: "ssh" | "sftp" | "ftp";
   vhost: string;
   wordpressPath: string;
@@ -56,7 +59,8 @@ interface CreateDeployTargetRequest {
     port: number;
     passive: boolean;
   };
-  database: {
+  /** デプロイ(DB同期)用。保守専用サーバーでは未指定 */
+  database?: {
     host: string;
     name: string;
     user: string;
@@ -73,21 +77,23 @@ export async function POST(request: NextRequest) {
   try {
     const body: CreateDeployTargetRequest = await request.json();
 
-    // バリデーション
-    if (!body.siteId || !body.name || !body.type || !body.vhost || !body.wordpressPath) {
+    // バリデーション（siteId は任意。未指定なら保守専用サーバーとして登録される）
+    if (!body.name || !body.type || !body.vhost || !body.wordpressPath) {
       return NextResponse.json(
         { error: "必須項目が不足しています" },
         { status: 400 }
       );
     }
 
-    // サイトの存在確認
-    const site = await getSite(body.siteId);
-    if (!site) {
-      return NextResponse.json(
-        { error: "指定されたサイトが存在しません" },
-        { status: 404 }
-      );
+    // サイトの存在確認（指定された場合のみ）
+    if (body.siteId) {
+      const site = await getSite(body.siteId);
+      if (!site) {
+        return NextResponse.json(
+          { error: "指定されたサイトが存在しません" },
+          { status: 404 }
+        );
+      }
     }
 
     // SSH設定の検証
@@ -106,8 +112,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 名前の重複チェック（同一サイト内）
-    const existingTargets = await getDeployTargets(body.siteId);
+    // 名前の重複チェック（同一サイト内、保守専用サーバー同士はその中で比較）
+    const allTargets = await getDeployTargets();
+    const existingTargets = body.siteId
+      ? allTargets.filter((t) => t.siteId === body.siteId)
+      : allTargets.filter((t) => !t.siteId);
     if (existingTargets.some((t) => t.name === body.name)) {
       return NextResponse.json(
         { error: "同じ名前のデプロイターゲットが既に存在します" },
@@ -121,14 +130,17 @@ export async function POST(request: NextRequest) {
       siteId: body.siteId,
       name: body.name,
       type: body.type,
+      managed: body.managed,
+      tags: body.tags,
       vhost: body.vhost,
       wordpressPath: body.wordpressPath,
       ssh: body.ssh,
       basicAuth: body.basicAuth?.user ? body.basicAuth : undefined,
       monitoring: body.monitoring,
       ftp: body.ftp,
+      // 保守専用サーバーでは未設定のまま保持する（[] や {} を作らない）
       database: body.database,
-      exclude: body.exclude || [],
+      exclude: body.exclude,
     };
 
     await addDeployTarget(target);

@@ -25,9 +25,13 @@ import {
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Loader2 } from "lucide-react";
-import { DEFAULT_MONITORING_THRESHOLDS } from "@/types";
+import {
+  MonitoringFields,
+  monitoringFormSchema,
+  monitoringDefaultValues,
+  buildMonitoringConfig,
+} from "@/components/monitoring-fields";
 
 const formSchema = z.object({
   siteId: z.string().min(1, "サイトを選択してください"),
@@ -47,11 +51,7 @@ const formSchema = z.object({
   basicAuthUser: z.string().optional(),
   basicAuthPassword: z.string().optional(),
   // 監視設定
-  monitoringEnabled: z.boolean().optional(),
-  monitoringIntervalMinutes: z.number().min(1).max(1440).optional(),
-  monitoringDiskPercent: z.number().min(1).max(99).optional(),
-  monitoringSslDays: z.number().min(1).max(365).optional(),
-  monitoringHttpMs: z.number().min(100).max(60000).optional(),
+  ...monitoringFormSchema,
   // データベース設定
   dbHost: z.string().min(1, "DBホストを入力してください"),
   dbName: z.string().min(1, "DB名を入力してください"),
@@ -75,11 +75,7 @@ const defaultValues: FormValues = {
   sshKeyPath: "~/.ssh/id_rsa",
   basicAuthUser: "",
   basicAuthPassword: "",
-  monitoringEnabled: false,
-  monitoringIntervalMinutes: 30,
-  monitoringDiskPercent: DEFAULT_MONITORING_THRESHOLDS.diskUsagePercent,
-  monitoringSslDays: DEFAULT_MONITORING_THRESHOLDS.sslExpiryDays,
-  monitoringHttpMs: DEFAULT_MONITORING_THRESHOLDS.httpResponseMs,
+  ...monitoringDefaultValues,
   dbHost: "localhost",
   dbName: "",
   dbUser: "",
@@ -111,7 +107,6 @@ function NewDeployTargetForm() {
   });
 
   const watchType = form.watch("type");
-  const watchMonitoringEnabled = form.watch("monitoringEnabled");
 
   // サイト一覧を取得
   useEffect(() => {
@@ -149,15 +144,7 @@ function NewDeployTargetForm() {
         basicAuth: data.basicAuthUser
           ? { user: data.basicAuthUser, password: data.basicAuthPassword || "" }
           : undefined,
-        monitoring: {
-          enabled: data.monitoringEnabled ?? false,
-          intervalMinutes: data.monitoringIntervalMinutes ?? 30,
-          thresholds: {
-            diskUsagePercent: data.monitoringDiskPercent ?? DEFAULT_MONITORING_THRESHOLDS.diskUsagePercent,
-            sslExpiryDays: data.monitoringSslDays ?? DEFAULT_MONITORING_THRESHOLDS.sslExpiryDays,
-            httpResponseMs: data.monitoringHttpMs ?? DEFAULT_MONITORING_THRESHOLDS.httpResponseMs,
-          },
-        },
+        monitoring: buildMonitoringConfig(data),
         database: {
           host: data.dbHost,
           name: data.dbName,
@@ -429,126 +416,7 @@ function NewDeployTargetForm() {
           </Card>
 
           {/* 監視設定 */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">監視設定</CardTitle>
-              <CardDescription>
-                定期ヘルスチェックを有効にするとスケジューラが自動チェックし、異常時に通知します
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <FormField
-                control={form.control}
-                name="monitoringEnabled"
-                render={({ field }) => (
-                  <FormItem>
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <FormControl>
-                        <Checkbox
-                          checked={field.value ?? false}
-                          onCheckedChange={field.onChange}
-                        />
-                      </FormControl>
-                      <span className="text-sm font-medium">監視を有効にする</span>
-                    </label>
-                  </FormItem>
-                )}
-              />
-
-              {watchMonitoringEnabled && (
-                <div className="space-y-4 pl-6 border-l-2 border-muted">
-                  <FormField
-                    control={form.control}
-                    name="monitoringIntervalMinutes"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>チェック間隔（分）</FormLabel>
-                        <FormControl>
-                          <Input
-                            type="number"
-                            min={1}
-                            max={1440}
-                            {...field}
-                            value={field.value ?? 30}
-                            onChange={(e) => field.onChange(parseInt(e.target.value, 10) || 30)}
-                            className="w-32"
-                          />
-                        </FormControl>
-                        <FormDescription>1〜1440分。推奨: 30分</FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <div>
-                    <p className="text-sm font-medium mb-3">通知しきい値</p>
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                      <FormField
-                        control={form.control}
-                        name="monitoringDiskPercent"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>ディスク使用率 (%)</FormLabel>
-                            <FormControl>
-                              <Input
-                                type="number"
-                                min={1}
-                                max={99}
-                                {...field}
-                                value={field.value ?? 85}
-                                onChange={(e) => field.onChange(parseInt(e.target.value, 10) || 85)}
-                              />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={form.control}
-                        name="monitoringSslDays"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>SSL残り日数（日）</FormLabel>
-                            <FormControl>
-                              <Input
-                                type="number"
-                                min={1}
-                                max={365}
-                                {...field}
-                                value={field.value ?? 14}
-                                onChange={(e) => field.onChange(parseInt(e.target.value, 10) || 14)}
-                              />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={form.control}
-                        name="monitoringHttpMs"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>HTTP応答時間 (ms)</FormLabel>
-                            <FormControl>
-                              <Input
-                                type="number"
-                                min={100}
-                                max={60000}
-                                {...field}
-                                value={field.value ?? 3000}
-                                onChange={(e) => field.onChange(parseInt(e.target.value, 10) || 3000)}
-                              />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                    </div>
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+          <MonitoringFields />
 
           {/* データベース設定 */}
           <Card>

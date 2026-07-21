@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDeployTarget } from "@/lib/deploy-targets";
-import { getSite } from "@/lib/sites";
 import { testSSHConnection, validateRemotePath } from "@/lib/sync";
 
 interface RouteParams {
@@ -22,15 +21,6 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // サイトの取得
-    const site = await getSite(target.siteId);
-    if (!site) {
-      return NextResponse.json(
-        { error: "サイトが見つかりません" },
-        { status: 404 }
-      );
-    }
-
     // SSH接続のみサポート（現時点）
     if (target.type !== "ssh") {
       return NextResponse.json(
@@ -40,7 +30,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     // SSH接続テスト
-    const connectionResult = await testSSHConnection(site.path, target);
+    const connectionResult = await testSSHConnection(target);
     if (!connectionResult.success) {
       return NextResponse.json({
         success: false,
@@ -50,7 +40,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     // リモートパス検証
-    const pathResult = await validateRemotePath(site.path, target);
+    const pathResult = await validateRemotePath(target);
     if (!pathResult.success) {
       return NextResponse.json({
         success: false,

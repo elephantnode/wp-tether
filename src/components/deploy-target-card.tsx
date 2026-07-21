@@ -30,6 +30,7 @@ import {
   Database,
   Globe,
   LayoutDashboard,
+  ShieldCheck,
 } from "lucide-react";
 import { SyncDialog } from "./sync-dialog";
 import { DbSyncDialog } from "./db-sync-dialog";
@@ -51,6 +52,8 @@ export function DeployTargetCard({ target, sitePath, siteStatus }: DeployTargetC
   const [error, setError] = useState<string | null>(null);
 
   const isRunning = siteStatus === "running";
+  // サイト未紐付け = 保守専用サーバー。ローカルサイトを必要とする操作は出さない
+  const isMaintenanceOnly = !target.siteId;
 
   async function handleDelete() {
     setIsDeleting(true);
@@ -104,7 +107,10 @@ export function DeployTargetCard({ target, sitePath, siteStatus }: DeployTargetC
         <CardHeader className="pb-2">
           <div className="flex justify-between items-start">
             <CardTitle className="text-lg">{target.name}</CardTitle>
-            <Badge variant="outline">{target.type.toUpperCase()}</Badge>
+            <div className="flex gap-1 shrink-0">
+              {isMaintenanceOnly && <Badge variant="secondary">保守専用</Badge>}
+              <Badge variant="outline">{target.type.toUpperCase()}</Badge>
+            </div>
           </div>
           <div className="flex flex-col gap-1">
             <a
@@ -174,32 +180,51 @@ export function DeployTargetCard({ target, sitePath, siteStatus }: DeployTargetC
             接続テスト
           </Button>
 
-          <Button
-            size="sm"
-            onClick={() => setShowSyncDialog(true)}
-          >
-            <FolderSync className="w-4 h-4 mr-1" />
-            ファイル
-          </Button>
+          {isMaintenanceOnly ? (
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => router.push("/servers")}
+            >
+              <ShieldCheck className="w-4 h-4 mr-1" />
+              保守・監視へ
+            </Button>
+          ) : (
+            <>
+              <Button
+                size="sm"
+                onClick={() => setShowSyncDialog(true)}
+              >
+                <FolderSync className="w-4 h-4 mr-1" />
+                ファイル
+              </Button>
 
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={() => setShowDbSyncDialog(true)}
-          >
-            <Database className="w-4 h-4 mr-1" />
-            DB
-          </Button>
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => setShowDbSyncDialog(true)}
+              >
+                <Database className="w-4 h-4 mr-1" />
+                DB
+              </Button>
 
-          <RemoteDbRestoreDialog
-            targetId={target.id}
-            targetName={target.name}
-          />
+              <RemoteDbRestoreDialog
+                targetId={target.id}
+                targetName={target.name}
+              />
+            </>
+          )}
 
           <Button
             size="sm"
             variant="outline"
-            onClick={() => router.push(`/deploy/${target.id}/edit`)}
+            onClick={() =>
+              router.push(
+                isMaintenanceOnly
+                  ? `/servers/${target.id}/edit`
+                  : `/deploy/${target.id}/edit`
+              )
+            }
           >
             <Pencil className="w-4 h-4 mr-1" />
             編集

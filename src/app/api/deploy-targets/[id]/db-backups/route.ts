@@ -18,6 +18,13 @@ export async function GET(
       );
     }
 
+    if (!target.siteId) {
+      return NextResponse.json(
+        { error: "このサーバーはローカルサイトに紐付いていないため、デプロイ用DBバックアップは利用できません。サーバー管理のバックアップ機能をご利用ください。" },
+        { status: 400 }
+      );
+    }
+
     const site = await getSite(target.siteId);
     if (!site) {
       return NextResponse.json(

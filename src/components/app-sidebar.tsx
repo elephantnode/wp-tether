@@ -96,11 +96,17 @@ export function AppSidebar() {
         </SidebarGroup>
       </SidebarContent>
 
-      <SidebarFooter className="border-t p-4">
+      <SidebarFooter className="border-t p-4 gap-2">
         <Button className="w-full" size="sm" asChild>
           <Link href="/sites/new">
             <Plus className="w-4 h-4 mr-2" />
             新規サイト作成
+          </Link>
+        </Button>
+        <Button className="w-full" size="sm" variant="outline" asChild>
+          <Link href="/servers/new">
+            <Plus className="w-4 h-4 mr-2" />
+            サーバー追加
           </Link>
         </Button>
       </SidebarFooter>

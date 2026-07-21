@@ -45,12 +45,20 @@ export default async function DeployPage() {
             リモートサーバーとの同期設定（ドラッグでサイトを並べ替え）
           </p>
         </div>
-        <Button asChild>
-          <Link href="/deploy/new">
-            <Plus className="w-4 h-4 mr-2" />
-            ターゲット追加
-          </Link>
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" asChild>
+            <Link href="/servers/new">
+              <Plus className="w-4 h-4 mr-2" />
+              保守サーバー追加
+            </Link>
+          </Button>
+          <Button asChild>
+            <Link href="/deploy/new">
+              <Plus className="w-4 h-4 mr-2" />
+              ターゲット追加
+            </Link>
+          </Button>
+        </div>
       </div>
 
       {hasAnything ? (

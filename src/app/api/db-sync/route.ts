@@ -38,6 +38,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // 保守専用サーバー（サイト未紐付け）ではDB同期は行えない
+    if (!target.siteId) {
+      return NextResponse.json(
+        { error: "このサーバーはローカルサイトに紐付いていないため、DB同期は利用できません。" },
+        { status: 400 }
+      );
+    }
+
     // サイトを取得
     const site = await getSite(target.siteId);
     if (!site) {

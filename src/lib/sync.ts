@@ -295,7 +295,6 @@ export async function executeSync(options: SyncOptions): Promise<SyncResult[]> {
  * SSH接続テスト（ホストの ssh で実行、鍵はコンテナに置かない）
  */
 export async function testSSHConnection(
-  _sitePath: string,
   target: DeployTarget
 ): Promise<{ success: boolean; error?: string }> {
   if (!target.ssh) {
@@ -337,7 +336,6 @@ export async function testSSHConnection(
  * リモートのWordPressパスを検証（ホストの ssh で実行）
  */
 export async function validateRemotePath(
-  _sitePath: string,
   target: DeployTarget
 ): Promise<{ success: boolean; error?: string }> {
   if (!target.ssh) {

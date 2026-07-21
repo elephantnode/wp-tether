@@ -44,7 +44,7 @@ import { ServerSecurityDialog } from "@/components/server-security-dialog";
 import { ServerMaintenanceDialog } from "@/components/server-maintenance-dialog";
 import { ServerOpsDialog } from "@/components/server-ops-dialog";
 import { ServerBackupDialog } from "@/components/server-backup-dialog";
-import { FileText, Database } from "lucide-react";
+import { FileText, Database, Plus, Pencil, ShieldCheck, Link2 } from "lucide-react";
 import type { ServerHealthResult, HealthStatus, MonitoringConfig } from "@/types";
 
 interface ServerSummary {
@@ -216,6 +216,17 @@ function SortableServerRow({
                 {s.name}
               </span>
               <OverallBadge status={s.health?.overall} />
+              {s.siteId ? (
+                <Badge variant="outline" className="shrink-0">
+                  <Link2 className="w-3 h-3 mr-1" />
+                  サイト連携
+                </Badge>
+              ) : (
+                <Badge variant="secondary" className="shrink-0">
+                  <ShieldCheck className="w-3 h-3 mr-1" />
+                  保守専用
+                </Badge>
+              )}
               {s.monitoring?.enabled && (
                 <Badge variant="outline" className="shrink-0 text-blue-600 border-blue-400">
                   監視中 {s.monitoring.intervalMinutes}分
@@ -308,6 +319,12 @@ function SortableServerRow({
               <Button size="sm" variant="outline" onClick={() => onBackup(s)}>
                 <Database className="w-4 h-4 mr-2" />
                 バックアップ
+              </Button>
+              <Button size="sm" variant="outline" asChild>
+                <Link href={s.siteId ? `/deploy/${s.id}/edit` : `/servers/${s.id}/edit`}>
+                  <Pencil className="w-4 h-4 mr-2" />
+                  編集
+                </Link>
               </Button>
             </div>
           </div>
@@ -402,10 +419,18 @@ export default function ServersPage() {
           <h1 className="text-2xl font-bold">サーバー</h1>
           <p className="text-muted-foreground">接続先サーバーの監視・保守</p>
         </div>
-        <Button variant="outline" onClick={checkAll} disabled={checkingAll || servers.length === 0}>
-          <RefreshCw className={`w-4 h-4 mr-2 ${checkingAll ? "animate-spin" : ""}`} />
-          すべてチェック
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={checkAll} disabled={checkingAll || servers.length === 0}>
+            <RefreshCw className={`w-4 h-4 mr-2 ${checkingAll ? "animate-spin" : ""}`} />
+            すべてチェック
+          </Button>
+          <Button asChild>
+            <Link href="/servers/new">
+              <Plus className="w-4 h-4 mr-2" />
+              サーバー追加
+            </Link>
+          </Button>
+        </div>
       </div>
 
       {/* サマリー */}
@@ -441,13 +466,23 @@ export default function ServersPage() {
         <Card>
           <CardContent className="py-12 text-center">
             <Server className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
-            <h3 className="text-lg font-medium mb-2">監視対象サーバーがありません</h3>
+            <h3 className="text-lg font-medium mb-2">保守対象サーバーがありません</h3>
             <p className="text-muted-foreground mb-4">
-              SSH接続のデプロイターゲットを作成すると、ここで監視・保守できます
+              保守するサーバーを追加すると、監視・セキュリティチェック・バックアップが利用できます
             </p>
             <Button asChild>
-              <Link href="/deploy">デプロイ設定へ</Link>
+              <Link href="/servers/new">
+                <Plus className="w-4 h-4 mr-2" />
+                サーバー追加
+              </Link>
             </Button>
+            <p className="text-sm text-muted-foreground mt-4">
+              ローカルサイトに紐付ける場合は{" "}
+              <Link href="/deploy" className="underline hover:text-foreground">
+                デプロイ設定
+              </Link>{" "}
+              から追加できます
+            </p>
           </CardContent>
         </Card>
       ) : (
