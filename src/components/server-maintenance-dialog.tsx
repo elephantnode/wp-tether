@@ -22,7 +22,12 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Loader2, RefreshCw, Wrench, Terminal, Power } from "lucide-react";
-import type { UpdatePreview, MaintenanceAction, MaintenanceResult } from "@/types";
+import type {
+  UpdatePreview,
+  MaintenanceAction,
+  MaintenanceResult,
+  CoreUpdateOption,
+} from "@/types";
 
 const ACTION_LABELS: Record<MaintenanceAction, string> = {
   "update-all": "すべて更新（コア・プラグイン・テーマ・翻訳）",
@@ -31,6 +36,15 @@ const ACTION_LABELS: Record<MaintenanceAction, string> = {
   "update-themes": "すべてのテーマを更新",
   "update-translations": "翻訳を更新",
 };
+
+/** 確認ダイアログに渡す実行内容 */
+interface PendingUpdate {
+  action: MaintenanceAction;
+  /** コア更新の対象指定（メジャー/マイナーの選択） */
+  coreOption?: CoreUpdateOption;
+  /** 確認ダイアログに出す説明 */
+  label: string;
+}
 
 interface Props {
   serverId: string;
@@ -47,7 +61,7 @@ export function ServerMaintenanceDialog({ serverId, serverName, open, onOpenChan
   const [createBackup, setCreateBackup] = useState(true);
   const [output, setOutput] = useState<string>("");
   const [wpCliCmd, setWpCliCmd] = useState("");
-  const [pendingAction, setPendingAction] = useState<MaintenanceAction | null>(null);
+  const [pendingAction, setPendingAction] = useState<PendingUpdate | null>(null);
 
   const fetchPreview = useCallback(async () => {
     setLoading(true);
@@ -94,14 +108,16 @@ export function ServerMaintenanceDialog({ serverId, serverName, open, onOpenChan
     }
   };
 
-  const runUpdate = (action: MaintenanceAction) =>
-    post({ op: "update", action, createBackup }, action);
+  // コア更新候補（マイナー / メジャー）。同時に出ることがある。
+  const candidates = preview?.coreUpdate?.candidates ?? [];
+  const minorCandidate = candidates.find((c) => c.updateType === "minor");
+  const majorCandidate = candidates.find((c) => c.updateType === "major");
 
   const confirmUpdate = () => {
     if (!pendingAction) return;
-    const action = pendingAction;
+    const { action, coreOption } = pendingAction;
     setPendingAction(null);
-    runUpdate(action);
+    post({ op: "update", action, createBackup, coreOption }, action);
   };
 
   const toggleMaintenance = () =>
@@ -148,7 +164,21 @@ export function ServerMaintenanceDialog({ serverId, serverName, open, onOpenChan
                   {preview.coreUpdate && (
                     <div>
                       <Badge variant="destructive" className="mr-2">コア</Badge>
-                      {preview.coreUpdate.current} → {preview.coreUpdate.latest}
+                      {preview.coreUpdate.current || "?"} →{" "}
+                      {preview.coreUpdate.candidates.length > 1
+                        ? preview.coreUpdate.candidates
+                            .map(
+                              (c) =>
+                                `${c.version}${
+                                  c.updateType === "major"
+                                    ? "（メジャー）"
+                                    : c.updateType === "minor"
+                                      ? "（マイナー）"
+                                      : ""
+                                }`
+                            )
+                            .join(" / ")
+                        : preview.coreUpdate.latest}
                     </div>
                   )}
                   {preview.plugins.length > 0 && (
@@ -187,23 +217,114 @@ export function ServerMaintenanceDialog({ serverId, serverName, open, onOpenChan
               </label>
 
               <div className="flex flex-wrap gap-2">
-                <Button size="sm" onClick={() => setPendingAction("update-all")} disabled={!!busy}>
+                <Button
+                  size="sm"
+                  onClick={() =>
+                    setPendingAction({
+                      action: "update-all",
+                      label: ACTION_LABELS["update-all"],
+                    })
+                  }
+                  disabled={!!busy}
+                >
                   {busy === "update-all" && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
                   すべて更新
                 </Button>
-                <Button size="sm" variant="outline" onClick={() => setPendingAction("update-core")} disabled={!!busy}>
-                  コア
-                </Button>
-                <Button size="sm" variant="outline" onClick={() => setPendingAction("update-plugins")} disabled={!!busy}>
+
+                {/* マイナーとメジャーが同時にある場合のみボタンを分ける */}
+                {minorCandidate && majorCandidate ? (
+                  <>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() =>
+                        setPendingAction({
+                          action: "update-core",
+                          coreOption: { version: minorCandidate.version },
+                          label: `WordPress コアをマイナー更新（${preview?.coreUpdate?.current} → ${minorCandidate.version}）`,
+                        })
+                      }
+                      disabled={!!busy}
+                    >
+                      コア: マイナー {minorCandidate.version}
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={() =>
+                        setPendingAction({
+                          action: "update-core",
+                          coreOption: { version: majorCandidate.version },
+                          label: `WordPress コアをメジャー更新（${preview?.coreUpdate?.current} → ${majorCandidate.version}）`,
+                        })
+                      }
+                      disabled={!!busy}
+                    >
+                      コア: メジャー {majorCandidate.version}
+                    </Button>
+                  </>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() =>
+                      setPendingAction({
+                        action: "update-core",
+                        label: ACTION_LABELS["update-core"],
+                      })
+                    }
+                    disabled={!!busy}
+                  >
+                    コア
+                  </Button>
+                )}
+
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() =>
+                    setPendingAction({
+                      action: "update-plugins",
+                      label: ACTION_LABELS["update-plugins"],
+                    })
+                  }
+                  disabled={!!busy}
+                >
                   プラグイン
                 </Button>
-                <Button size="sm" variant="outline" onClick={() => setPendingAction("update-themes")} disabled={!!busy}>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() =>
+                    setPendingAction({
+                      action: "update-themes",
+                      label: ACTION_LABELS["update-themes"],
+                    })
+                  }
+                  disabled={!!busy}
+                >
                   テーマ
                 </Button>
-                <Button size="sm" variant="outline" onClick={() => setPendingAction("update-translations")} disabled={!!busy}>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() =>
+                    setPendingAction({
+                      action: "update-translations",
+                      label: ACTION_LABELS["update-translations"],
+                    })
+                  }
+                  disabled={!!busy}
+                >
                   翻訳
                 </Button>
               </div>
+
+              {minorCandidate && majorCandidate && (
+                <p className="text-xs text-muted-foreground mt-2">
+                  「すべて更新」ではコアはマイナー（{minorCandidate.version}）までに留めます。
+                  メジャー更新は上のボタンから個別に実行してください。
+                </p>
+              )}
             </section>
 
             {/* メンテナンスモード */}
@@ -273,7 +394,7 @@ export function ServerMaintenanceDialog({ serverId, serverName, open, onOpenChan
               <div className="space-y-2 text-sm">
                 <p>
                   <span className="font-medium text-foreground">{serverName}</span> に対して
-                  「{pendingAction ? ACTION_LABELS[pendingAction] : ""}」を実行します。
+                  「{pendingAction?.label ?? ""}」を実行します。
                 </p>
                 <p>
                   事前バックアップ:{" "}

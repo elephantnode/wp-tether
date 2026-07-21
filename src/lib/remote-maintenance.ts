@@ -2,6 +2,8 @@ import {
   DeployTarget,
   UpdatePreview,
   UpdateItem,
+  CoreUpdateCandidate,
+  CoreUpdateOption,
   MaintenanceAction,
   MaintenanceResult,
 } from "@/types";
@@ -57,8 +59,9 @@ async function runWp(
 export async function getUpdatePreview(target: DeployTarget): Promise<UpdatePreview> {
   ensureWpCli(target);
 
-  const [coreRes, pluginRes, themeRes, transRes] = await Promise.all([
+  const [coreRes, versionRes, pluginRes, themeRes, transRes] = await Promise.all([
     wp(target, "core check-update --format=json 2>/dev/null || echo '[]'").catch(() => ({ stdout: "[]", stderr: "" })),
+    wp(target, "core version 2>/dev/null || echo ''").catch(() => ({ stdout: "", stderr: "" })),
     wp(target, "plugin list --update=available --format=json --fields=name,version,update_version 2>/dev/null || echo '[]'").catch(() => ({ stdout: "[]", stderr: "" })),
     wp(target, "theme list --update=available --format=json --fields=name,version,update_version 2>/dev/null || echo '[]'").catch(() => ({ stdout: "[]", stderr: "" })),
     wp(target, "language core list --update=available --format=count 2>/dev/null || echo 0").catch(() => ({ stdout: "0", stderr: "" })),
@@ -67,9 +70,24 @@ export async function getUpdatePreview(target: DeployTarget): Promise<UpdatePrev
   const preview: UpdatePreview = { plugins: [], themes: [], translations: 0 };
 
   try {
-    const core = JSON.parse(coreRes.stdout || "[]") as { version: string; current?: string }[];
+    // check-update が返すのは version / update_type / package_url のみ。
+    // 現在バージョンは含まれないので wp core version から取る。
+    const current = (versionRes.stdout || "").trim();
+    const core = JSON.parse(coreRes.stdout || "[]") as {
+      version: string;
+      update_type?: string;
+    }[];
     if (core.length > 0) {
-      preview.coreUpdate = { current: core[0].current || "", latest: core[0].version };
+      const candidates: CoreUpdateCandidate[] = core
+        .filter((c) => c.version)
+        .map((c) => ({ version: c.version, updateType: c.update_type || "" }));
+      preview.coreUpdate = {
+        current,
+        // 最新＝バージョン番号が最大のもの（WP-CLIの並び順に依存しない）
+        latest: candidates.reduce((a, b) => (compareVersions(b.version, a.version) > 0 ? b : a))
+          .version,
+        candidates,
+      };
     }
   } catch {
     /* ignore */
@@ -82,6 +100,17 @@ export async function getUpdatePreview(target: DeployTarget): Promise<UpdatePrev
   preview.translations = isNaN(transCount) ? 0 : transCount;
 
   return preview;
+}
+
+/** "6.8.10" > "6.8.2" を正しく判定する数値比較 */
+function compareVersions(a: string, b: string): number {
+  const pa = a.split(".").map((n) => parseInt(n, 10) || 0);
+  const pb = b.split(".").map((n) => parseInt(n, 10) || 0);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const d = (pa[i] ?? 0) - (pb[i] ?? 0);
+    if (d !== 0) return d;
+  }
+  return 0;
 }
 
 function parseUpdateList(json: string, type: "plugin" | "theme"): UpdateItem[] {
@@ -125,7 +154,8 @@ async function backupBeforeUpdate(target: DeployTarget, log: string[]): Promise<
 export async function runUpdate(
   target: DeployTarget,
   action: MaintenanceAction,
-  createBackup: boolean
+  createBackup: boolean,
+  coreOption?: CoreUpdateOption
 ): Promise<MaintenanceResult> {
   ensureWpCli(target);
   const log: string[] = [];
@@ -138,7 +168,7 @@ export async function runUpdate(
     }
 
     log.push("\n=== 更新実行 ===");
-    const commands = updateCommands(action);
+    const commands = updateCommands(action, coreOption);
     for (const cmd of commands) {
       log.push(`\n$ wp ${cmd}`);
       const { output, ok } = await runWp(target, `${cmd} 2>&1`, 600000);
@@ -168,10 +198,30 @@ export async function runUpdate(
   }
 }
 
-function updateCommands(action: MaintenanceAction): string[] {
+/**
+ * コア更新コマンドを組み立てる。
+ * - version 指定があれば --version=X（狙ったバージョンに固定）
+ * - minorOnly なら --minor（マイナーに留める）
+ * - どちらも無ければ最新（＝メジャーがあればメジャー）
+ */
+function coreUpdateCommand(option?: CoreUpdateOption): string {
+  if (option?.version) {
+    // バージョン番号の形だけを許可（shellEscape に加えた二重の防御）
+    if (!/^\d+(\.\d+){0,3}$/.test(option.version)) {
+      throw new Error(`不正なバージョン指定です: ${option.version}`);
+    }
+    return `core update --version=${shellEscape(option.version)}`;
+  }
+  if (option?.minorOnly) {
+    return "core update --minor";
+  }
+  return "core update";
+}
+
+function updateCommands(action: MaintenanceAction, coreOption?: CoreUpdateOption): string[] {
   switch (action) {
     case "update-core":
-      return ["core update", "core update-db"];
+      return [coreUpdateCommand(coreOption), "core update-db"];
     case "update-plugins":
       return ["plugin update --all"];
     case "update-themes":
@@ -179,8 +229,10 @@ function updateCommands(action: MaintenanceAction): string[] {
     case "update-translations":
       return ["language core update", "language plugin update --all", "language theme update --all"];
     case "update-all":
+      // 一括実行ではコアは常にマイナーに留める（coreOption では上書きさせない）。
+      // メジャー更新は「メジャー更新」ボタンからの意図的な操作を要求する。
       return [
-        "core update",
+        coreUpdateCommand({ minorOnly: true }),
         "core update-db",
         "plugin update --all",
         "theme update --all",

@@ -603,11 +603,31 @@ export interface UpdateItem {
 }
 
 /** 更新プレビュー結果 */
+/** コア更新の候補（wp core check-update の1行） */
+export interface CoreUpdateCandidate {
+  version: string;
+  /** "major" | "minor"（WP-CLIの update_type をそのまま保持） */
+  updateType: string;
+}
+
 export interface UpdatePreview {
-  coreUpdate?: { current: string; latest: string };
+  coreUpdate?: {
+    current: string;
+    latest: string;
+    /** 利用可能な全候補（マイナー/メジャーが同時に出ることがある） */
+    candidates: CoreUpdateCandidate[];
+  };
   plugins: UpdateItem[];
   themes: UpdateItem[];
   translations: number;
+}
+
+/** コア更新をどこまで上げるか */
+export interface CoreUpdateOption {
+  /** 指定バージョンへ更新（未指定なら minorOnly に従う） */
+  version?: string;
+  /** true なら wp core update --minor（マイナーに留める） */
+  minorOnly?: boolean;
 }
 
 /** メンテナンス操作の種別 */

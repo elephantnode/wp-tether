@@ -7,7 +7,7 @@ import {
   getMaintenanceMode,
   runWpCliCommand,
 } from "@/lib/remote-maintenance";
-import { MaintenanceAction } from "@/types";
+import { MaintenanceAction, CoreUpdateOption } from "@/types";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -57,7 +57,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     if (op === "update") {
       const action = body.action as MaintenanceAction;
       const createBackup = body.createBackup !== false;
-      const result = await runUpdate(target, action, createBackup);
+      const coreOption = body.coreOption as CoreUpdateOption | undefined;
+      const result = await runUpdate(target, action, createBackup, coreOption);
       return NextResponse.json({ result });
     }
 
