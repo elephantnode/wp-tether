@@ -392,13 +392,16 @@ function parseWp(stdout: string): WpHealthCheckResult {
   const themeUpdates = parseInt((sections.THEMES || "").trim(), 10);
   if (!isNaN(themeUpdates)) result.themeUpdates = themeUpdates;
 
-  // cron: next_run_gmt が過去のイベント数
+  // cron: 実行予定時刻が10分以上過去のイベント数
   const cronRaw = (sections.CRON || "").trim();
   if (cronRaw) {
     try {
-      const events = JSON.parse(cronRaw) as { time?: number }[];
-      const now = Math.floor(Date.now() / 1000);
-      result.overdueCron = events.filter((e) => typeof e.time === "number" && e.time < now - 600).length;
+      const events = JSON.parse(cronRaw) as { time?: number; next_run_gmt?: string }[];
+      const nowMs = Date.now();
+      result.overdueCron = events.filter((e) => {
+        const ms = cronEventTimeMs(e);
+        return ms !== null && ms < nowMs - 600_000;
+      }).length;
     } catch {
       // パース失敗は無視
     }
@@ -421,6 +424,20 @@ function parseWp(stdout: string): WpHealthCheckResult {
   }
 
   return result;
+}
+
+/**
+ * cron イベントの実行予定時刻（ms）。
+ * `wp cron event list --format=json` は GMT の文字列 next_run_gmt を返す
+ * （--fields=time 指定時のみ epoch 秒の time が入る）。
+ */
+function cronEventTimeMs(event: { time?: number; next_run_gmt?: string }): number | null {
+  if (typeof event.time === "number") return event.time * 1000;
+  if (event.next_run_gmt) {
+    const ms = Date.parse(event.next_run_gmt.replace(" ", "T") + "Z");
+    if (!isNaN(ms)) return ms;
+  }
+  return null;
 }
 
 // ===========================================
