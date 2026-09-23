@@ -2,6 +2,26 @@
 
 WordPress ローカル開発環境管理ツール（Local by Flywheel / MAMP 代替）
 
+## セキュリティ（最優先）
+
+**このリポジトリは public（`github.com/elephantnode/wp-tether`）。** コミットする内容は
+全世界から読める前提で扱う。履歴に一度入ったものは push 後に消せない。
+
+- **資格情報をリポジトリ内のファイルに書かない。** APIキー・トークン・パスワード・
+  SSH鍵は `.env`（ignore 済み）か 1Password に置く。動作確認のために一時的に
+  ベタ書きするのも不可（コミットし忘れの事故になる）。
+- **Claude Code の permission ルールに秘密を埋め込まない。** `.claude/settings.json` は
+  追跡されており公開される。一時的・個人的なルールは ignore 済みの
+  `.claude/settings.local.json` に置く。`Bash(KEY="..." curl ...)` のような
+  値ごとの許可ルールは作らず、`Bash(curl:*)` のような形にする。
+- **実サーバーの情報（ホスト名・IP・SSHユーザー・DB名・パス）をコード・コメント・
+  コミットメッセージ・`docs/` に書かない。** これらは `data/`（ignore 済み）に留める。
+  障害調査でサーバー固有の値を扱ったときも、コミットメッセージには症状と原因だけ書く。
+- 個人設定・ローカル環境固有のファイルは追跡しない（`.vscode/`、`*.code-workspace`、
+  `.claude/settings.local.json`、`.env`、`data/` は ignore 済み）。
+- コミット前に `git diff --cached` を確認する。新規ファイルを追加したときは、
+  それが ignore 対象かどうかを push 前に確認する。
+
 ## 技術スタック
 - Next.js 16 (App Router)
 - TypeScript
