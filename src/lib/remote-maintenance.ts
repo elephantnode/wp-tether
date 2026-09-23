@@ -54,26 +54,134 @@ async function runWp(
 }
 
 // ===========================================
+// WP-CLI バッチ実行（1本の SSH で複数コマンドを順に流す）
+// ===========================================
+/**
+ * セクション区切りマーカー。WP-CLI の出力に現れない文字列にしている。
+ */
+const SECTION_MARKER = "___WP_TETHER_SECTION___";
+
+/**
+ * バッチのタイムアウト（5分）。
+ * 個別 SSH（120s）より長いのは、コマンドを並列ではなく直列に流すため。
+ */
+const BATCH_TIMEOUT_MS = 300000;
+
+interface BatchStep {
+  /** 結果を引くためのキー */
+  key: string;
+  /** wp に渡す引数 */
+  args: string;
+  /** コマンドが失敗したときに代わりに出力する値 */
+  fallback: string;
+}
+
+/**
+ * 複数の WP-CLI コマンドを **1本の SSH セッション** で順に実行する。
+ *
+ * 以前は Promise.all で 1 コマンド 1 SSH を並列に張っていたが、
+ * リモート側で WordPress のブートが同時に何本も走って CPU を奪い合い、
+ * 単発なら数秒のコマンドが数分に膨れてタイムアウトしていた。
+ * SSH ハンドシェイクのコストも接続数分かかっていた。
+ */
+async function runWpBatch(
+  target: DeployTarget,
+  steps: BatchStep[],
+  timeoutMs: number = BATCH_TIMEOUT_MS
+): Promise<Record<string, string>> {
+  const wpBin = target.wpCli?.path || "wp";
+  // cd 失敗時に後続の wp がホームディレクトリで走らないよう、ここで打ち切る
+  const script =
+    `cd ${shellEscape(target.wordpressPath)} || exit 1; ` +
+    steps
+      .map(
+        (s) =>
+          // 直前のコマンドが改行なしで終わっても（例: `--format=json` は
+          // 末尾に改行を付けない）マーカーが必ず行頭に来るよう改行で挟む
+          `printf '\\n%s\\n' ${shellEscape(SECTION_MARKER + s.key)}; ` +
+          // 各ステップを必ず終了コード 0 で終わらせ、1つの失敗で
+          // 連鎖全体が落ちて取得済みの結果まで捨てられるのを防ぐ
+          `${wpBin} ${s.args} 2>/dev/null || printf '%s\\n' ${shellEscape(s.fallback)}`
+      )
+      .join("; ");
+
+  let stdout = "";
+  try {
+    ({ stdout } = await executeRemoteCommand(target, script, timeoutMs));
+  } catch (e) {
+    // タイムアウト／非ゼロ終了でも、そこまでに得られた出力は使う。
+    // （途中で切れた場合、未到達のセクションは空文字のままになる）
+    stdout = (e as ExecErrorLike).stdout ?? "";
+  }
+
+  const sections: Record<string, string> = {};
+  for (const s of steps) sections[s.key] = "";
+
+  let current: string | null = null;
+  const lines: Record<string, string[]> = {};
+  for (const line of stdout.split("\n")) {
+    if (line.startsWith(SECTION_MARKER)) {
+      current = line.slice(SECTION_MARKER.length).trim();
+      lines[current] = [];
+      continue;
+    }
+    if (current && lines[current]) lines[current].push(line);
+  }
+  for (const [key, body] of Object.entries(lines)) {
+    if (key in sections) sections[key] = body.join("\n").trim();
+  }
+
+  return sections;
+}
+
+// ===========================================
 // 更新プレビュー
 // ===========================================
-export async function getUpdatePreview(target: DeployTarget): Promise<UpdatePreview> {
+const PREVIEW_STEPS: BatchStep[] = [
+  { key: "coreUpdate", args: "core check-update --format=json", fallback: "[]" },
+  { key: "coreVersion", args: "core version", fallback: "" },
+  {
+    key: "plugins",
+    args: "plugin list --update=available --format=json --fields=name,version,update_version",
+    fallback: "[]",
+  },
+  {
+    key: "themes",
+    args: "theme list --update=available --format=json --fields=name,version,update_version",
+    fallback: "[]",
+  },
+  { key: "translations", args: "language core list --update=available --format=count", fallback: "0" },
+  { key: "maintenanceMode", args: "maintenance-mode status", fallback: "" },
+];
+
+export interface MaintenanceOverview {
+  preview: UpdatePreview;
+  maintenanceMode: boolean;
+}
+
+/**
+ * 更新プレビューとメンテナンスモード状態をまとめて取得する。
+ * 6 コマンドすべてを 1 本の SSH で流すので、接続は 1 回で済む。
+ */
+export async function getMaintenanceOverview(target: DeployTarget): Promise<MaintenanceOverview> {
   ensureWpCli(target);
+  const sections = await runWpBatch(target, PREVIEW_STEPS);
 
-  const [coreRes, versionRes, pluginRes, themeRes, transRes] = await Promise.all([
-    wp(target, "core check-update --format=json 2>/dev/null || echo '[]'").catch(() => ({ stdout: "[]", stderr: "" })),
-    wp(target, "core version 2>/dev/null || echo ''").catch(() => ({ stdout: "", stderr: "" })),
-    wp(target, "plugin list --update=available --format=json --fields=name,version,update_version 2>/dev/null || echo '[]'").catch(() => ({ stdout: "[]", stderr: "" })),
-    wp(target, "theme list --update=available --format=json --fields=name,version,update_version 2>/dev/null || echo '[]'").catch(() => ({ stdout: "[]", stderr: "" })),
-    wp(target, "language core list --update=available --format=count 2>/dev/null || echo 0").catch(() => ({ stdout: "0", stderr: "" })),
-  ]);
+  return {
+    preview: buildPreview(sections),
+    maintenanceMode:
+      /active/i.test(sections.maintenanceMode) && !/not active/i.test(sections.maintenanceMode),
+  };
+}
 
+function buildPreview(sections: Record<string, string>): UpdatePreview {
   const preview: UpdatePreview = { plugins: [], themes: [], translations: 0 };
 
   try {
     // check-update が返すのは version / update_type / package_url のみ。
     // 現在バージョンは含まれないので wp core version から取る。
-    const current = (versionRes.stdout || "").trim();
-    const core = JSON.parse(coreRes.stdout || "[]") as {
+    const current = sections.coreVersion || "";
+    const core = JSON.parse(sections.coreUpdate || "[]") as {
       version: string;
       update_type?: string;
     }[];
@@ -93,10 +201,10 @@ export async function getUpdatePreview(target: DeployTarget): Promise<UpdatePrev
     /* ignore */
   }
 
-  preview.plugins = parseUpdateList(pluginRes.stdout, "plugin");
-  preview.themes = parseUpdateList(themeRes.stdout, "theme");
+  preview.plugins = parseUpdateList(sections.plugins, "plugin");
+  preview.themes = parseUpdateList(sections.themes, "theme");
 
-  const transCount = parseInt(transRes.stdout.trim(), 10);
+  const transCount = parseInt(sections.translations, 10);
   preview.translations = isNaN(transCount) ? 0 : transCount;
 
   return preview;
@@ -257,15 +365,6 @@ export async function setMaintenanceMode(
     30000
   );
   return { success: ok, output, error: ok ? undefined : output };
-}
-
-export async function getMaintenanceMode(target: DeployTarget): Promise<boolean> {
-  try {
-    const { stdout } = await wp(target, "maintenance-mode status 2>&1", 30000);
-    return /active/i.test(stdout) && !/not active/i.test(stdout);
-  } catch {
-    return false;
-  }
 }
 
 // ===========================================

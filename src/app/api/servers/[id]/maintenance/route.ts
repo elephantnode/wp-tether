@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDeployTarget } from "@/lib/deploy-targets";
 import {
-  getUpdatePreview,
+  getMaintenanceOverview,
   runUpdate,
   setMaintenanceMode,
-  getMaintenanceMode,
   runWpCliCommand,
 } from "@/lib/remote-maintenance";
 import { MaintenanceAction, CoreUpdateOption } from "@/types";
@@ -24,10 +23,9 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "SSH接続のサーバーが見つかりません" }, { status: 404 });
     }
 
-    const [preview, maintenanceMode] = await Promise.all([
-      getUpdatePreview(target),
-      getMaintenanceMode(target),
-    ]);
+    // 1本の SSH で全チェックをまとめて実行する（並列 SSH はリモートの
+    // WordPress ブートが競合してタイムアウトの原因になるため使わない）
+    const { preview, maintenanceMode } = await getMaintenanceOverview(target);
 
     return NextResponse.json({ preview, maintenanceMode });
   } catch (error) {
