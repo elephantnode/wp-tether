@@ -29,6 +29,21 @@ function combineStatus(statuses: HealthStatus[]): HealthStatus {
   return "unknown";
 }
 
+/**
+ * `===NAME===` マーカー区切りの出力をセクションに分解する。
+ * マーカーが値と同じ行に出ても（WP-CLI の --format=count は末尾に改行を付けない）
+ * 以降のセクションを取り落とさないよう、行単位ではなくマーカーで分割する。
+ */
+function splitSections(stdout: string): Record<string, string> {
+  const sections: Record<string, string> = {};
+  const parts = stdout.split(/===([A-Z]+)===/);
+  for (let i = 1; i < parts.length; i += 2) {
+    const name = parts[i];
+    sections[name] = (sections[name] ?? "") + (parts[i + 1] ?? "");
+  }
+  return sections;
+}
+
 // ===========================================
 // HTTP 稼働チェック
 // ===========================================
@@ -191,17 +206,7 @@ function parseDiskAndResource(
   stdout: string,
   thresholds: MonitoringThresholds
 ): { disk: DiskCheckResult; resource: ResourceCheckResult } {
-  const sections: Record<string, string> = {};
-  let current = "";
-  for (const line of stdout.split("\n")) {
-    const m = line.match(/^===(\w+)===$/);
-    if (m) {
-      current = m[1];
-      sections[current] = "";
-    } else if (current) {
-      sections[current] += line + "\n";
-    }
-  }
+  const sections = splitSections(stdout);
 
   // ディスク: "Filesystem 1024-blocks Used Available Capacity Mounted-on"
   const disk: DiskCheckResult = { status: "unknown" };
@@ -283,17 +288,19 @@ export async function checkWp(target: DeployTarget): Promise<WpHealthCheckResult
   // （握り潰すと権限エラー等が「Command failed: ssh ...」としか出ない）
   const command =
     // cd 失敗時に後続の wp がホームディレクトリで走らないよう、ここで打ち切る
-    `cd ${shellEscape(target.wordpressPath)} 2>&1 || { echo '===FATAL==='; exit 0; }; ` +
+    `cd ${shellEscape(target.wordpressPath)} 2>&1 || { printf '\\n===FATAL===\\n'; exit 0; }; ` +
+    // --format=count は末尾に改行を付けないため、マーカー側で改行を確保する
+    // （echo だと "0===PLUGINS===" と繋がり、以降のセクションを取り落とす）
     [
-      `echo '===VERSION==='`,
+      `printf '\\n===VERSION===\\n'`,
       `${wp} core version 2>&1`,
-      `echo '===COREUPDATE==='`,
+      `printf '\\n===COREUPDATE===\\n'`,
       `${wp} core check-update --format=count 2>&1`,
-      `echo '===PLUGINS==='`,
+      `printf '\\n===PLUGINS===\\n'`,
       `${wp} plugin list --update=available --format=count 2>&1`,
-      `echo '===THEMES==='`,
+      `printf '\\n===THEMES===\\n'`,
       `${wp} theme list --update=available --format=count 2>&1`,
-      `echo '===CRON==='`,
+      `printf '\\n===CRON===\\n'`,
       `${wp} cron event list --format=json 2>&1`,
     ].join("; ") +
     // 最後のコマンドの終了コードで連鎖全体が失敗し、取得済みの結果まで
@@ -337,17 +344,7 @@ function sectionError(raw: string | undefined): string | null {
 }
 
 function parseWp(stdout: string): WpHealthCheckResult {
-  const sections: Record<string, string> = {};
-  let current = "";
-  for (const line of stdout.split("\n")) {
-    const m = line.match(/^===(\w+)===$/);
-    if (m) {
-      current = m[1];
-      sections[current] = "";
-    } else if (current) {
-      sections[current] += line + "\n";
-    }
-  }
+  const sections = splitSections(stdout);
 
   // cd 失敗（wordpressPath の誤り）
   if ("FATAL" in sections) {
