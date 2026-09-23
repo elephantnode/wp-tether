@@ -124,3 +124,7 @@ export async function resolvePluginPresetsJsonPath(): Promise<string> {
 export async function resolveHostsConfigJsonPath(): Promise<string> {
   return path.join(await resolveDataDir(), "hosts.json");
 }
+
+export async function resolveSchedulerStateJsonPath(): Promise<string> {
+  return path.join(await resolveDataDir(), "scheduler-state.json");
+}
