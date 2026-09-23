@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(npx next *)",
-      "Bash(ESLINT_NO_DEV_ERRORS=true NEXT_DISABLE_ESLINT=1 npx next build)"
+      "Bash(ESLINT_NO_DEV_ERRORS=true NEXT_DISABLE_ESLINT=1 npx next build)",
+      "Bash(ps -o command= -p 74866)"
     ]
   }
 }
