@@ -10,7 +10,7 @@ WordPress ローカル開発環境管理ツール（Local by Flywheel / MAMP 代
 
 ## 開発コマンド
 ```bash
-npm run dev      # 開発サーバー起動 (http://localhost:3000)
+npm run dev      # 開発サーバー起動 (http://localhost:3755)
 npm run build    # プロダクションビルド
 npm start        # 本番ビルドを起動 (http://localhost:3755)
 npm run lint     # ESLint実行
