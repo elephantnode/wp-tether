@@ -12,8 +12,13 @@ WordPress ローカル開発環境管理ツール（Local by Flywheel / MAMP 代
 ```bash
 npm run dev      # 開発サーバー起動 (http://localhost:3000)
 npm run build    # プロダクションビルド
+npm start        # 本番ビルドを起動 (http://localhost:3755)
 npm run lint     # ESLint実行
 ```
+
+日常的にツールとして使うときは `npm run build && npm start` を使う。dev サーバーは
+ルート単位のオンデマンドコンパイルのため、起動後の初回アクセスだけページごとに
+0.2〜2.4秒かかる（クライアントJSも dev は約6倍のサイズ）。ポートは dev と同じ 3755。
 
 ## アーキテクチャ
 
@@ -35,6 +40,7 @@ npm run lint     # ESLint実行
 - メンテ: `src/lib/remote-maintenance.ts`（更新プレビュー / 事前バックアップ付き一括更新 / メンテモード / WP-CLIランナー）
 - 運用: `src/lib/remote-ops.ts`（debug.log/PHP errorログ閲覧 / WP-Cron一覧・実行 / DBバックアップ）
 - 定期実行: `src/instrumentation.ts` + `src/lib/scheduler.ts`（setInterval。監視有効サーバーを間隔ごとにチェック、状態変化時のみ通知、1日1回DBバックアップ）
+  - 実行間隔の判定はプロセス再起動をまたいで保持する。最終チェック時刻は `data/monitoring/{targetId}.json` の `checkedAt`、最終DBバックアップ時刻は `data/scheduler-state.json`。メモリだけで持つと再起動ごとに全監視対象へチェックとリモートDBダンプが走る
 - 通知: `src/lib/notify.ts`（macOS通知 / Webhook / アプリ内 data/notifications.json）
 - 資格情報暗号化: `src/lib/secrets.ts`（AES-256-GCM、鍵は `~/.wp-tether/secret.key`。deploy-targets.json のDB/FTPパスワードを暗号化保存。平文値も後方互換で読める）
 
@@ -69,6 +75,7 @@ npm run lint     # ESLint実行
 - `data/monitoring/{targetId}.json` - サーバーヘルスチェックのキャッシュ
 - `data/security/{targetId}.json` - リモートセキュリティスキャンのキャッシュ
 - `data/notifications.json` - アプリ内通知の履歴
+- `data/scheduler-state.json` - スケジューラの最終DBバックアップ時刻（再起動後の二重実行防止）
 
 ## 実装済み機能
 - サイト管理（作成・起動・停止・削除）
