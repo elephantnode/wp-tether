@@ -323,24 +323,63 @@ export async function checkWp(target: DeployTarget): Promise<WpHealthCheckResult
   }
 }
 
-/**
- * セクションの内容がエラー出力なら、その要点を返す（正常なら null）
- */
-function sectionError(raw: string | undefined): string | null {
-  const text = (raw ?? "").trim();
-  if (!text) return null;
-  const isError =
-    /^(PHP\s+)?(Warning|Notice|Fatal error|Error|Parse error)\s*:/im.test(text) ||
-    /command not found|No such file or directory|Permission denied/i.test(text);
-  if (!isError) return null;
+/** PHP の警告系ノイズ。コマンド自体は成功していることがある */
+const PHP_NOTICE_RE = /^(PHP\s+)?(Warning|Notice|Deprecated)\s*:/i;
+/** 実際にコマンドが失敗している出力 */
+const FATAL_RE = /^(PHP\s+)?(Fatal error|Parse error|Error)\s*:/i;
+const SHELL_ERROR_RE = /command not found|No such file or directory|Permission denied/i;
 
-  const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
-  // "Error: ..." を最優先、無ければ最初の行
-  const primary =
-    lines.find((l) => /^Error\s*:/i.test(l)) ??
-    lines.find((l) => /command not found|Permission denied|No such file/i.test(l)) ??
-    lines[0];
-  return primary.replace(/\s+/g, " ").slice(0, 200);
+interface SectionOutput {
+  /** 警告行を除いた本体。値のパースにはこちらを使う */
+  value: string;
+  /** 取り除いた警告行（表示用の補足） */
+  notices: string[];
+  /** 本体が失敗を示している場合の要点（正常なら null） */
+  error: string | null;
+}
+
+function summarizeLine(line: string): string {
+  return line.replace(/\s+/g, " ").slice(0, 200);
+}
+
+/**
+ * 警告行を重複判定しやすい形に正規化する。
+ * 同じ警告が "PHP Deprecated: ..."（ログ向け）と "Deprecated: ..."（表示向け）の
+ * 2行で届くため、先頭の "PHP " を落として1件に畳む。
+ */
+function normalizeNotice(line: string): string {
+  return summarizeLine(line.replace(/^PHP\s+/i, ""));
+}
+
+/**
+ * セクションの出力を「値」「無害な警告」「エラー」に分解する。
+ * 各サブコマンドは 2>&1 なので、wp-config.php の重複 define などによる
+ * PHP Warning が値と混ざって届く。警告行だけを理由に結果を捨てない。
+ */
+function parseSection(raw: string | undefined): SectionOutput {
+  const lines = (raw ?? "")
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
+
+  const notices: string[] = [];
+  const rest: string[] = [];
+  for (const line of lines) {
+    if (PHP_NOTICE_RE.test(line)) notices.push(normalizeNotice(line));
+    else rest.push(line);
+  }
+
+  const error =
+    rest.find((l) => FATAL_RE.test(l)) ??
+    rest.find((l) => SHELL_ERROR_RE.test(l)) ??
+    // 警告しか返っていない = 値が取れていないので、その警告を理由にする
+    (rest.length === 0 && notices.length > 0 ? notices[0] : null);
+
+  return {
+    value: rest.join("\n"),
+    notices,
+    error: error ? summarizeLine(error) : null,
+  };
 }
 
 function parseWp(stdout: string): WpHealthCheckResult {
@@ -355,45 +394,59 @@ function parseWp(stdout: string): WpHealthCheckResult {
   }
 
   const result: WpHealthCheckResult = { status: "ok" };
+  // 各セクションで拾った PHP 警告。重複を除いて結果に添える
+  const notices = new Set<string>();
 
   // バージョンが取れない = WP-CLI が WordPress をブートストラップできていない。
   // 権限エラー等の実際の理由をそのまま見せる。
-  const versionError = sectionError(sections.VERSION);
-  const coreVersion = (sections.VERSION || "").trim();
-  if (versionError || !/^\d+\.\d+/.test(coreVersion)) {
-    return {
-      status: "unknown",
-      message: versionError ?? "WP-CLIの実行に失敗しました",
-    };
+  const version = parseSection(sections.VERSION);
+  version.notices.forEach((n) => notices.add(n));
+  const coreVersion = version.value.trim();
+  if (version.error || !/^\d+\.\d+/.test(coreVersion)) {
+    return withNotices(
+      {
+        status: "unknown",
+        message: version.error ?? "WP-CLIの実行に失敗しました",
+      },
+      notices
+    );
   }
   result.coreVersion = coreVersion;
+
+  const coreUpdate = parseSection(sections.COREUPDATE);
+  const plugins = parseSection(sections.PLUGINS);
+  const themes = parseSection(sections.THEMES);
+  const cron = parseSection(sections.CRON);
+  for (const section of [coreUpdate, plugins, themes, cron]) {
+    section.notices.forEach((n) => notices.add(n));
+  }
 
   // バージョンは取れたが個別コマンドが失敗しているケース
   // （例: wp-config.php が読めずDB接続を伴うコマンドだけ落ちる）
   const detailError =
-    sectionError(sections.COREUPDATE) ??
-    sectionError(sections.PLUGINS) ??
-    sectionError(sections.THEMES) ??
-    sectionError(sections.CRON);
+    coreUpdate.error ?? plugins.error ?? themes.error ?? cron.error;
   if (detailError) {
-    return {
-      status: "warning",
-      coreVersion,
-      message: `更新情報を取得できません: ${detailError}`,
-    };
+    return withNotices(
+      {
+        status: "warning",
+        coreVersion,
+        message: `更新情報を取得できません: ${detailError}`,
+      },
+      notices
+    );
   }
 
-  const coreUpdateCount = parseInt((sections.COREUPDATE || "").trim(), 10);
+  const coreUpdateCount = parseInt(coreUpdate.value.trim(), 10);
   result.coreUpdateAvailable = !isNaN(coreUpdateCount) && coreUpdateCount > 0;
 
-  const pluginUpdates = parseInt((sections.PLUGINS || "").trim(), 10);
+  const pluginUpdates = parseInt(plugins.value.trim(), 10);
   if (!isNaN(pluginUpdates)) result.pluginUpdates = pluginUpdates;
 
-  const themeUpdates = parseInt((sections.THEMES || "").trim(), 10);
+  const themeUpdates = parseInt(themes.value.trim(), 10);
   if (!isNaN(themeUpdates)) result.themeUpdates = themeUpdates;
 
   // cron: 実行予定時刻が10分以上過去のイベント数
-  const cronRaw = (sections.CRON || "").trim();
+  const cronRaw = cron.value.trim();
   if (cronRaw) {
     try {
       const events = JSON.parse(cronRaw) as { time?: number; next_run_gmt?: string }[];
@@ -423,7 +476,7 @@ function parseWp(stdout: string): WpHealthCheckResult {
     result.message = "更新あり: " + parts.join(", ");
   }
 
-  return result;
+  return withNotices(result, notices);
 }
 
 /**
@@ -438,6 +491,21 @@ function cronEventTimeMs(event: { time?: number; next_run_gmt?: string }): numbe
     if (!isNaN(ms)) return ms;
   }
   return null;
+}
+
+/** 結果に載せる PHP 警告の上限（Deprecated を大量に出すサイトがある） */
+const MAX_NOTICES = 5;
+
+/** PHP 警告があれば結果に添える（ステータスは変えない） */
+function withNotices(
+  result: WpHealthCheckResult,
+  notices: Set<string>
+): WpHealthCheckResult {
+  if (notices.size > 0) {
+    result.notices = [...notices].slice(0, MAX_NOTICES);
+    result.noticeCount = notices.size;
+  }
+  return result;
 }
 
 // ===========================================

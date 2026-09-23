@@ -45,7 +45,12 @@ import { ServerMaintenanceDialog } from "@/components/server-maintenance-dialog"
 import { ServerOpsDialog } from "@/components/server-ops-dialog";
 import { ServerBackupDialog } from "@/components/server-backup-dialog";
 import { FileText, Database, Plus, Pencil, ShieldCheck, Link2 } from "lucide-react";
-import type { ServerHealthResult, HealthStatus, MonitoringConfig } from "@/types";
+import type {
+  ServerHealthResult,
+  HealthStatus,
+  MonitoringConfig,
+  WpHealthCheckResult,
+} from "@/types";
 
 interface ServerSummary {
   id: string;
@@ -109,7 +114,9 @@ function CheckRow({
       <span className={`inline-block w-2 h-2 rounded-full ${statusColor(status)}`} />
       <Icon className="w-4 h-4 text-muted-foreground" />
       <span className="font-medium w-28 shrink-0">{label}</span>
-      <span className="text-muted-foreground truncate">{detail}</span>
+      <span className="text-muted-foreground truncate" title={detail}>
+        {detail}
+      </span>
     </div>
   );
 }
@@ -133,11 +140,17 @@ function healthDetails(health: ServerHealthResult) {
       resource.memoryUsagePercent !== undefined || resource.load1 !== undefined
         ? `メモリ ${resource.memoryUsagePercent ?? "-"}% / ロード ${resource.load1 ?? "-"}${resource.cpuCores ? `/${resource.cpuCores}` : ""}`
         : resource.message || "未取得",
-    wp:
-      wp.coreVersion
-        ? `v${wp.coreVersion}${wp.message ? ` / ${wp.message}` : " / 最新"}`
-        : wp.message || "未取得",
+    wp: wpDetail(wp),
   };
+}
+
+/** WPチェックの表示文。無害な PHP 警告は末尾に添える（ステータスは変えない） */
+function wpDetail(wp: WpHealthCheckResult): string {
+  if (!wp.coreVersion) return wp.message || "未取得";
+  const base = `v${wp.coreVersion}${wp.message ? ` / ${wp.message}` : " / 最新"}`;
+  if (!wp.notices?.length) return base;
+  const count = wp.noticeCount ?? wp.notices.length;
+  return `${base} / PHP警告${count}件: ${wp.notices[0]}`;
 }
 
 /** 表示用ホスト名（vhost のドメイン、取れなければ SSH ホスト） */

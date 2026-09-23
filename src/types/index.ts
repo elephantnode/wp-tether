@@ -214,6 +214,10 @@ export interface WpHealthCheckResult {
   themeUpdates?: number;
   /** 期限超過の cron イベント数 */
   overdueCron?: number;
+  /** 結果には影響しない PHP 警告（wp-config.php の重複 define など）。先頭数件のみ */
+  notices?: string[];
+  /** PHP 警告の総数（notices は上限で切られている） */
+  noticeCount?: number;
   message?: string;
 }
 
