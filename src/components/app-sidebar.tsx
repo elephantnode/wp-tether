@@ -33,6 +33,11 @@ const navItems = [
     icon: Globe,
   },
   {
+    title: "hosts 管理",
+    href: "/hosts",
+    icon: Network,
+  },
+  {
     title: "コンテナ",
     href: "/containers",
     icon: Container,
@@ -46,11 +51,6 @@ const navItems = [
     title: "サーバー",
     href: "/servers",
     icon: Server,
-  },
-  {
-    title: "hosts 管理",
-    href: "/hosts",
-    icon: Network,
   },
   {
     title: "設定",
